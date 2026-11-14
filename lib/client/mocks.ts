@@ -90,6 +90,18 @@ export function getMockScenario(): MockScenario {
   }
 }
 
+/** Used by mock auth: signing in/up/out moves the tab to the matching scenario. */
+export function setMockScenario(scenario: MockScenario, opts: { clearData?: boolean } = {}) {
+  const s = storage();
+  try {
+    if (scenario === "default") s?.removeItem(SCENARIO_KEY);
+    else s?.setItem(SCENARIO_KEY, scenario);
+    if (opts.clearData) s?.removeItem(DB_KEY);
+  } catch {
+    // Storage blocked: scenario falls back to the URL / default.
+  }
+}
+
 /** What the mock backend has "stored" for this tab. */
 type MockDb = {
   profile?: Profile;

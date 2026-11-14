@@ -18,6 +18,16 @@ With mocks on, a "Mock data" badge is shown in the header. Preview UI states wit
 `?mock=rest_day | new_user | no_plan | empty_rewards | pro | error | unauthorized | offline | slow | generate_error | rate_limited | rich`
 on any page. The scenario sticks for the browser tab; switching scenario starts clean, and `?mock=reset` clears the mock's saved data.
 
+## Auth
+
+Sign up / log in run in the browser with Supabase (`@supabase/ssr`), email + password or magic link.
+The session is stored in cookies, so `/api/**` route handlers can read it.
+
+- Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local`.
+- In Supabase → Authentication → URL configuration, add `<site>/auth/callback` as a redirect URL
+  (magic links and email confirmation land there).
+- With `NEXT_PUBLIC_USE_MOCKS=true`, auth is mocked: any email/password works, nothing is sent.
+
 ## Structure
 
 | Path | Owner |
