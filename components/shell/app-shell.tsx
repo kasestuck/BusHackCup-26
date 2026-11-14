@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { API_ROUTES, MeResponseSchema } from "@/lib/contract";
 import { useApi } from "@/lib/client/use-api";
 import { USE_MOCKS } from "@/lib/client/mocks";
@@ -84,8 +84,82 @@ function AccountArea() {
   );
 }
 
+type IsActive = (href: string) => boolean;
+const NONE_ACTIVE: IsActive = () => false;
+
+function TopNavLinks({ isActive }: { isActive: IsActive }) {
+  return (
+    <ul className="flex items-center gap-1">
+      {NAV.map(({ href, label }) => {
+        const active = isActive(href);
+        return (
+          <li key={href}>
+            <Link
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={cx(
+                "relative inline-flex h-10 items-center rounded-md px-3.5 text-[0.9375rem] font-medium transition-colors",
+                active ? "text-ink" : "text-muted hover:text-ink",
+              )}
+            >
+              {label}
+              <span
+                aria-hidden="true"
+                className={cx(
+                  "absolute inset-x-3.5 -bottom-[13px] h-0.5 rounded-full bg-lime transition-opacity lg:-bottom-[17px]",
+                  active ? "opacity-100" : "opacity-0",
+                )}
+              />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function BottomNavLinks({ isActive }: { isActive: IsActive }) {
+  return (
+    <ul className="mx-auto grid h-[68px] max-w-md grid-cols-4 px-2">
+      {NAV.map(({ href, label, icon: Icon }) => {
+        const active = isActive(href);
+        return (
+          <li key={href}>
+            <Link
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={cx(
+                "flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium transition-colors active:scale-95",
+                active ? "text-ink" : "text-subtle hover:text-muted",
+              )}
+            >
+              <span
+                className={cx(
+                  "grid h-8 w-12 place-items-center rounded-full transition-colors duration-300",
+                  active ? "bg-lime text-lime-ink" : "",
+                )}
+              >
+                <Icon size={20} />
+              </span>
+              {label}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/* usePathname() needs a Suspense boundary on dynamic routes (e.g. /workout/[day]) under
+   Cache Components; the fallback renders the same links without an active state. */
+function ActiveTopNav() {
+  return <TopNavLinks isActive={useIsActive()} />;
+}
+function ActiveBottomNav() {
+  return <BottomNavLinks isActive={useIsActive()} />;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
-  const isActive = useIsActive();
   return (
     <div className="min-h-dvh">
       <a
@@ -99,32 +173,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-6 px-4 sm:px-6 lg:h-[72px] lg:px-8">
           <Wordmark />
           <nav aria-label="Primary" className="hidden md:block">
-            <ul className="flex items-center gap-1">
-              {NAV.map(({ href, label }) => {
-                const active = isActive(href);
-                return (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      aria-current={active ? "page" : undefined}
-                      className={cx(
-                        "relative inline-flex h-10 items-center rounded-md px-3.5 text-[0.9375rem] font-medium transition-colors",
-                        active ? "text-ink" : "text-muted hover:text-ink",
-                      )}
-                    >
-                      {label}
-                      <span
-                        aria-hidden="true"
-                        className={cx(
-                          "absolute inset-x-3.5 -bottom-[13px] h-0.5 rounded-full bg-lime transition-opacity lg:-bottom-[17px]",
-                          active ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <Suspense fallback={<TopNavLinks isActive={NONE_ACTIVE} />}>
+              <ActiveTopNav />
+            </Suspense>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <MockBadge />
@@ -142,33 +193,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         aria-label="Primary"
         className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/90 backdrop-blur-xl md:hidden"
       >
-        <ul className="mx-auto grid h-[68px] max-w-md grid-cols-4 px-2">
-          {NAV.map(({ href, label, icon: Icon }) => {
-            const active = isActive(href);
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className={cx(
-                    "flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium transition-colors active:scale-95",
-                    active ? "text-ink" : "text-subtle hover:text-muted",
-                  )}
-                >
-                  <span
-                    className={cx(
-                      "grid h-8 w-12 place-items-center rounded-full transition-colors duration-300",
-                      active ? "bg-lime text-lime-ink" : "",
-                    )}
-                  >
-                    <Icon size={20} />
-                  </span>
-                  {label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <Suspense fallback={<BottomNavLinks isActive={NONE_ACTIVE} />}>
+          <ActiveBottomNav />
+        </Suspense>
       </nav>
     </div>
   );
