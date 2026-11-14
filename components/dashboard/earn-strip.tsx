@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { EARN_RULES } from "@/lib/client/economy";
 import { Eyebrow } from "@/components/ui/section-header";
 
@@ -26,6 +27,14 @@ export function EarnStrip() {
             </div>
             <p className="mt-6 font-display text-base font-semibold text-ink">{r.title}</p>
             <p className="mt-1 text-sm leading-relaxed text-muted">{r.detail}</p>
+            {r.key === "checkin" && (
+              <Link
+                href="/checkin"
+                className="-mb-2 mt-2 inline-flex py-2 text-sm font-semibold text-lime underline-offset-4 hover:underline"
+              >
+                Check in now →
+              </Link>
+            )}
           </div>
         ))}
       </div>

@@ -75,7 +75,9 @@ export function SessionResult({
             {checkin.title} for <span className="font-semibold text-lime">+{checkin.coins} coins</span>. Once a day.
           </p>
         </div>
-        <span className="text-xs text-subtle">Gym check-in arrives in a later build phase.</span>
+        <ButtonLink href="/checkin" variant="secondary" arrow className="shrink-0">
+          Check in
+        </ButtonLink>
       </Card>
 
       <div className="flex flex-wrap gap-3">

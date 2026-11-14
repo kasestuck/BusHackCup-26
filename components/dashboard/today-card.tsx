@@ -115,7 +115,13 @@ export function TodayCard({
           <div className="space-y-3">
             <p className="flex items-start gap-2 text-sm text-muted">
               <IconSpark size={16} className="mt-0.5 shrink-0 text-lime" />
-              Recovery is part of the plan. A gym check-in still earns coins today.
+              <span>
+                Recovery is part of the plan.{" "}
+                <Link href="/checkin" className="font-medium text-lime underline-offset-4 hover:underline">
+                  A gym check-in
+                </Link>{" "}
+                still earns coins today.
+              </span>
             </p>
             <ButtonLink href={href} variant="secondary" className="w-full" arrow>
               Preview {nextLabel === "Tomorrow" ? "tomorrow's" : `${nextLabel}'s`} workout
