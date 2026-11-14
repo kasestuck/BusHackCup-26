@@ -26,6 +26,8 @@ import {
   SessionRequestSchema,
 } from "@/lib/contract";
 
+import { ASSISTANT_ROUTE, AssistantRequestSchema } from "./assistant-contract";
+
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
 export const MOCK_SCENARIOS = [
@@ -318,6 +320,73 @@ function mockGeneratedPlan(input: OnboardingRequest): Plan {
   };
 }
 
+/* ------------------------------ AI Coach --------------------------------- */
+
+const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/**
+ * Keyword-based stand-in for the model behind POST /api/assistant (PROPOSAL).
+ * Uses the same mock plan, coins and streak the rest of the app shows.
+ */
+function mockCoachReply(text: string, plan: Plan, balance: number, streak: number): string {
+  const t = text.toLowerCase();
+  const wd = isoWeekday(new Date());
+  const today = plan.days.find((d) => d.weekday === wd);
+  const upcoming = [...plan.days].sort((a, b) => ((a.weekday - wd + 7) % 7 || 7) - ((b.weekday - wd + 7) % 7 || 7))[0];
+  const day = today ?? upcoming;
+  const list = (d: PlanDay, n = d.exercises.length) =>
+    d.exercises.slice(0, n).map((e) => `- ${e.name}: ${e.sets} × ${e.reps}`).join("\n");
+
+  if (/(pain|hurt|injur|sore|ache|knee|back|shoulder)/.test(t)) {
+    return [
+      "Sorry you're dealing with that. A few safe defaults:",
+      "- Stop any exercise that causes sharp or worsening pain.\n- Swap to a pain-free range or a lighter variation, or skip that movement today.\n- Mild muscle soreness after training is normal; joint pain isn't something to push through.",
+      "I can't give medical advice. If the pain is sharp, lasts more than a few days, or you have an ongoing injury, please check with a doctor or physical therapist. You can also mark it as an injury in Profile → Update answers, and your next plan will avoid loading that area.",
+    ].join("\n\n");
+  }
+  if (/(coin|reward|pro\b|redeem|earn|points)/.test(t)) {
+    return [
+      `You have ${balance} coins right now. Here's how to earn more:`,
+      "- Check in at a partner gym: +40 (once a day)\n- Log your workout: +10 (once a day)\n- Hit every planned day this week: +50 bonus",
+      "Spend them in Rewards on partner discounts or a free month of Pro.",
+    ].join("\n\n");
+  }
+  if (/(\b(10|15|20|25)\s*min|short|quick|no time|busy|less time)/.test(t)) {
+    if (!day) return "Your plan has no training days yet. Generate a plan first and I'll trim a session for you.";
+    return [
+      `Short on time? Here's a 20-minute version of ${day.focus}:`,
+      day.exercises.slice(0, 3).map((e) => `- ${e.name}: 2 × ${e.reps}`).join("\n"),
+      "Keep rest to about 60 seconds and finish with 2 minutes of easy stretching. Still log it: it counts for your streak and coins.",
+    ].join("\n\n");
+  }
+  if (/(form|technique|how do i|how to|squat|deadlift|press|row|lunge|plank)/.test(t)) {
+    return [
+      "Good form beats heavy weight. General cues:",
+      "1. Brace your core before every rep.\n2. Control the lowering phase; 2–3 seconds is plenty.\n3. Stop the set 1–2 reps before your form breaks.",
+      "Open the exercise in My Plan to watch its technique video. Each one is from our verified catalog.",
+    ].join("\n\n");
+  }
+  if (/(tired|motivat|skip|lazy|don.?t feel|can.?t be bothered)/.test(t)) {
+    return [
+      `You're on a ${streak}-day streak. Protect it with the smallest possible win today:`,
+      "- Go to the gym and check in (+40 coins), even if you only do 15 minutes.\n- Do the first two exercises of today's plan, then decide.",
+      "Most of the hard part is walking in. You pay for the gym; let's make it count.",
+    ].join("\n\n");
+  }
+  if (/(today|workout|plan|what should|session|train)/.test(t) && day) {
+    const when = today ? "Today" : `Next up on ${WEEKDAY_NAMES[day.weekday - 1]}`;
+    return [
+      `${when}: ${day.focus}, ${day.duration_min} minutes.`,
+      list(day),
+      "Warm up for 5 minutes first. Tap Start session in My Plan when you're at the gym.",
+    ].join("\n\n");
+  }
+  return [
+    `I'm your ShowUp coach. I know your plan (${plan.title}), your ${streak}-day streak and your ${balance} coins.`,
+    "Try asking me:\n- What's my workout today?\n- I only have 20 minutes\n- How do I earn coins faster?\n- How do I keep good form on squats?",
+  ].join("\n\n");
+}
+
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
@@ -341,8 +410,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const method = init?.method ?? "GET";
   const isGenerate = method === "POST" && path === API_ROUTES.planGenerate;
   const isNutrition = method === "POST" && path === API_ROUTES.nutritionAnalyze;
+  const isCoach = method === "POST" && path === ASSISTANT_ROUTE;
   // SPEC §6: generation takes 5–15 s; the mock sits at the fast end. Photo analysis is AI too.
-  await delay(scenario === "slow" ? 2500 : isGenerate ? 5200 : isNutrition ? 3600 : 350 + Math.random() * 300);
+  await delay(scenario === "slow" ? 2500 : isGenerate ? 5200 : isNutrition ? 3600 : isCoach ? 1100 + Math.random() * 600 : 350 + Math.random() * 300);
 
   if (scenario === "offline") throw new TypeError("Failed to fetch (mock offline)");
   if (scenario === "unauthorized") return err(401, "unauthorized", "Please sign in to continue.");
@@ -372,6 +442,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         };
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
+      }
+      case ASSISTANT_ROUTE: {
+        const parsed = AssistantRequestSchema.safeParse(readBody(init));
+        const last = parsed.success ? parsed.data.messages[parsed.data.messages.length - 1] : null;
+        if (!last || last.role !== "user") return err(422, "invalid_data", "Send a message to the coach.");
+        const content = mockCoachReply(last.content, plan, currentBalance(scenario, db), baseStreak(scenario));
+        return json(200, { reply: { role: "assistant", content } });
       }
       case API_ROUTES.nutritionAnalyze: {
         // SPEC §8: the server checks is_pro before calling the model.

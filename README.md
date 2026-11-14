@@ -30,6 +30,12 @@ The session is stored in cookies, so `/api/**` route handlers can read it.
   Enable it in Supabase → Authentication → Providers → **Anonymous sign-ins**.
 - With `NEXT_PUBLIC_USE_MOCKS=true`, auth is mocked: any email/password works, nothing is sent.
 
+## AI Coach (proposal)
+
+`/coach` is a chat with an AI coach. Its endpoint `POST /api/assistant` is a **proposal**, not yet in
+`lib/contract`: the schemas live in `lib/client/assistant-contract.ts` and run on mocks until the backend
+agrees and implements it (model call via `lib/server/ai.ts`, with the user's plan, coins and streak as context).
+
 ## Structure
 
 | Path | Owner |
