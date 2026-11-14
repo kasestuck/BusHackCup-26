@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { AiError, generateJson, type AiMessage } from "./ai.ts";
+import { AiError, createJsonGenerator, type AiMessage, type JsonGenerator } from "./ai.ts";
 import {
   AiPlanSchema, CompletedProfileSchema, QuestionnaireSchema, planSchemaFor,
   type AiPlan, type Plan, type Questionnaire,
@@ -86,6 +86,14 @@ function assertCatalog(profile: Questionnaire, catalog: readonly EligibleExercis
   }
 }
 
+/** Complete all catalog eligibility checks before reserving a paid AI attempt. */
+export function preparePlanCatalog(profile: Questionnaire, rawCatalog: readonly CatalogExercise[]): EligibleExercise[] {
+  const questionnaire = QuestionnaireSchema.parse(profile);
+  const catalog = eligibleExercises(questionnaire, rawCatalog);
+  assertCatalog(questionnaire, catalog);
+  return catalog;
+}
+
 function safetyNote(note: string, profile: Questionnaire): string {
   return profile.injuries.some((injury) => injury.status === "ongoing")
     ? `${note.trim()} ${ONGOING_INJURY_NOTE}`.trim() : note;
@@ -163,11 +171,10 @@ export function fallbackPlan(profile: Questionnaire, catalog: readonly EligibleE
 export async function createWorkoutPlan(
   profile: Questionnaire,
   rawCatalog: readonly CatalogExercise[],
-  options: { generate?: typeof generateJson; id?: string } = {},
+  options: { generate?: JsonGenerator; id?: string; aiBudgetMs?: number; aiTimeoutMs?: number } = {},
 ): Promise<Plan> {
   const questionnaire = QuestionnaireSchema.parse(profile);
-  const catalog = eligibleExercises(questionnaire, rawCatalog);
-  assertCatalog(questionnaire, catalog);
+  const catalog = preparePlanCatalog(questionnaire, rawCatalog);
   const id = options.id ?? randomUUID();
   const messages: AiMessage[] = [
     { role: "system", content: PLAN_SYSTEM_PROMPT },
@@ -178,25 +185,50 @@ export async function createWorkoutPlan(
       exercise_groups: catalog.map(({ slug, muscle_group }) => ({ slug, muscle_group })),
     }) },
   ];
-  const generate = options.generate ?? generateJson;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const candidate = await generate(AiPlanSchema, messages);
-      return hydratePlan(candidate, questionnaire, catalog, id);
-    } catch (error) {
-      const retryable = error instanceof PlanValidationError
-        || (error instanceof AiError && error.kind === "invalid_response");
-      if (!retryable) {
-        if (error instanceof AiError) break;
-        throw error;
-      }
-      if (attempt === 0) {
-        messages.push({ role: "user", content: JSON.stringify({
-          validation_error: error instanceof PlanValidationError ? error.message : "Return valid JSON matching the supplied schema.",
-          instruction: "Correct the response using the original questionnaire and allowed exercise list.",
-        }) });
+  // Tests may reduce these limits, but cannot extend the production AI budget.
+  const budgetMs = Math.min(options.aiBudgetMs ?? ECONOMY.ai.planBudgetMs, ECONOMY.ai.planBudgetMs);
+  const timeoutMs = Math.min(options.aiTimeoutMs ?? ECONOMY.ai.timeoutMs, ECONOMY.ai.timeoutMs);
+  if (!Number.isFinite(budgetMs) || budgetMs <= 0 || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new AiError("configuration");
+  }
+  const deadlineAt = performance.now() + budgetMs;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new AiError("timeout"));
+    }, budgetMs);
+  });
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const remainingMs = deadlineAt - performance.now();
+      if (remainingMs <= 0) break;
+      const generate = options.generate ?? createJsonGenerator({
+        timeoutMs: Math.min(timeoutMs, remainingMs), signal: controller.signal,
+      });
+      try {
+        // The shared deadline also bounds injected generators that ignore cancellation.
+        const candidate = await Promise.race([generate(AiPlanSchema, messages), deadline]);
+        return hydratePlan(candidate, questionnaire, catalog, id);
+      } catch (error) {
+        const retryable = error instanceof PlanValidationError
+          || (error instanceof AiError && error.kind === "invalid_response");
+        if (!retryable) {
+          if (error instanceof AiError) break;
+          throw error;
+        }
+        if (attempt === 0) {
+          messages.push({ role: "user", content: JSON.stringify({
+            validation_error: error instanceof PlanValidationError ? error.message : "Return valid JSON matching the supplied schema.",
+            instruction: "Correct the response using the original questionnaire and allowed exercise list.",
+          }) });
+        }
       }
     }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    controller.abort();
   }
   return fallbackPlan(questionnaire, catalog, id);
 }

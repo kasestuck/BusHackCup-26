@@ -44,6 +44,7 @@ psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261114
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140002_profile_bootstrap_and_permissions.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140003_activity_rewards.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140004_ai_generation.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140005_unmetered_fallback.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verification/assertions.sql
 ```
 
@@ -100,3 +101,5 @@ select has_function_privilege('anon', 'public.redeem_reward(uuid,uuid)', 'EXECUT
 Новые SQL-кейсы проверяют скользящие 168 часов Free, квоту Pro по локальной полуночи, шестую/десятую/одиннадцатую попытки, использование реальной подписки вместо `profiles.is_pro`, сохранение снимка анкеты, единственную награду +20, повторную запись того же attempt, единственный active plan, запрет чужого attempt и полный откат при ошибке ledger. Попытка резервируется до AI и не отменяется при ошибке последующей записи плана. `food_logs.image_path` nullable: тест сохраняет только результат без изображения.
 
 `concurrency.mjs` дополнен конкурентным резервированием Free-квоты через реальные соединения и advisory lock: ровно один attempt, второй вызов получает `pro_required`. Производственный timestamp берётся после ожидания advisory lock; необязательный p_now предназначен только для доверенных service-role fixtures. Эти SQL-проверки не вызывают AI и не доказывают работу HTTP-провайдера.
+
+Миграция 005 добавляет серверное сохранение запасного плана без попытки, когда AI не настроен. В конец assertions.sql добавлены 142 строки; прежнее содержимое сохранено. Проверяются отсутствие попытки, единственная награда +20, одна активная версия, идемпотентный повтор, запрет чужого ID, откат при ошибке ledger и запрет RPC для anon/authenticated. Существующий save_generated_plan по-прежнему требует зарезервированную попытку. Проверки пустого каталога, ввода и общего AI-бюджета находятся в существующем lib/server/plans.test.ts; новых runner-файлов нет.

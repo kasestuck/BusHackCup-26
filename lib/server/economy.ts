@@ -27,7 +27,9 @@ export const ECONOMY = Object.freeze({
   }),
   ai: Object.freeze({
     timeoutMs: 25_000,
-    imageMaxBytes: 5 * 1024 * 1024,
+    planBudgetMs: 40_000,
+    planRouteMaxDurationSeconds: 60,
+    imageMaxBytes: 4 * 1024 * 1024,
     nutritionTotalsTolerance: 0.01,
   }),
   sessionLimits: Object.freeze({
