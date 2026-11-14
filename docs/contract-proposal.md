@@ -946,3 +946,44 @@ export type EndpointName = keyof typeof EndpointContracts;
 - 401 unauthorized/invalid_gym_key, 404 plan_not_found, 422 validation_error и 429 rate_limited — предложенные имена; 429 для checkin — предложенный статус из требования rate limit.
 - Вопросы XP, streak, partner ownership, лимитов AI, Storage и бизнес-идемпотентности не скрыты за фиктивной реализацией. Этот файл ничего не деплоит, не создаёт API-роуты и не изменяет `lib/contract`.
 
+
+
+## Дополнение: POST /api/assistant
+
+Обратно-совместимый новый endpoint для существующего экрана Coach. Запрос и успешный ответ совпадают с предложением фронтенда в lib/client/assistant-contract.ts. Реализация схем находится в lib/contract/assistant.ts; сервер импортирует их только через lib/server/contract.ts. Новых кодов ошибок нет: используются unauthorized (401), validation_error (422), rate_limited (429), internal_error (500), ai_unavailable (503). Нет AI-конфигурации или провайдер недоступен — 503 без выдуманного ответа.
+
+```ts
+/** Match the frontend's existing AI Coach proposal without changing its wire format. */
+export const ChatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(4000),
+});
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+
+export const AssistantRequestSchema = z.object({
+  messages: z.array(ChatMessageSchema).min(1).max(30),
+});
+export type AssistantRequest = z.infer<typeof AssistantRequestSchema>;
+
+export const AssistantResponseSchema = z.object({
+  reply: z.object({
+    role: z.literal("assistant"),
+    content: z.string(),
+  }),
+});
+export type AssistantResponse = z.infer<typeof AssistantResponseSchema>;
+
+const assistantError = <S extends number, C extends string>(status: S, code: C) => z.object({
+  status: z.literal(status),
+  body: z.object({ error: z.object({ code: z.literal(code), message: z.string().min(1) }) }),
+});
+export const AssistantErrorResponseSchema = z.discriminatedUnion("status", [
+  assistantError(401, "unauthorized"),
+  assistantError(422, "validation_error"),
+  assistantError(429, "rate_limited"),
+  assistantError(500, "internal_error"),
+  assistantError(503, "ai_unavailable"),
+]);
+export type AssistantErrorResponse = z.infer<typeof AssistantErrorResponseSchema>;
+
+```

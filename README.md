@@ -107,6 +107,7 @@ QR-токен — HMAC секрета зала и минутного окна. �
 | POST | /api/rewards/redeem | Покупка награды за коины |
 | POST | /api/billing/subscribe | Имитация оплаты Pro |
 | POST | /api/nutrition/analyze | Оценка изображения еды, Pro, до 4 МиБ |
+| POST | /api/assistant | AI Coach с контекстом текущего пользователя; требует настроенного AI |
 | POST | /api/partner/simulate-purchase | Демо-покупка по полученной партнёрской награде |
 | GET | /api/partner/stats?partner_id= | Статистика партнёра; доступна любой сессии для демо |
 

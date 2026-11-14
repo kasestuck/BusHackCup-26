@@ -1137,3 +1137,107 @@ select pg_temp.expect_error($q$select public.seed_demo_account('a7111111-1111-41
     '42501',null,'anon cannot invoke demo history seeding');
 reset role;
 rollback;
+
+
+-- Optional-video persistence regressions. No migration is required: existing RPCs preserve JSON null.
+begin;
+create function pg_temp.assert_true(p_condition boolean, p_label text)
+returns void language plpgsql as $$
+begin
+    if p_condition is distinct from true then raise exception 'FAIL: %', p_label; end if;
+    raise notice 'PASS: %', p_label;
+end;
+$$;
+create function pg_temp.expect_error(p_sql text, p_state text, p_message text, p_label text)
+returns void language plpgsql as $$
+declare v_state text; v_message text;
+begin
+    begin execute p_sql;
+    exception when others then get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    end;
+    perform pg_temp.assert_true(v_state = p_state and (p_message is null or v_message = p_message), p_label);
+end;
+$$;
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
+insert into auth.users(id) values
+('a8111111-1111-4111-8111-111111111111'),
+('a8222222-2222-4222-8222-222222222222');
+set local role service_role;
+insert into public.exercises(slug,name,muscle_group,equipment,contraindicated_for,video_youtube_id,video_title,verified)
+values
+('verification-no-video-core','No-video core fixture','core','none','{}',null,null,false),
+('verification-no-video-upper','No-video upper fixture','upper','none','{}',null,null,false),
+('verification-no-video-lower','No-video lower fixture','lower','none','{}',null,null,false);
+select pg_temp.assert_true((
+    select count(*)=3 and bool_and(video_youtube_id is null and video_title is null and not verified)
+    from public.exercises where slug like 'verification-no-video-%'
+), 'unverified catalog exercises can retain absent video metadata without fabricated IDs');
+
+do $$
+declare
+    v_fallback_user uuid := 'a8111111-1111-4111-8111-111111111111';
+    v_generated_user uuid := 'a8222222-2222-4222-8222-222222222222';
+    v_snapshot jsonb := '{"height_cm":175,"weight_kg":75,"age":30,"goal":"general_fitness", "workout_types":["home_bodyweight"],"equipment":["none"],"session_minutes":20,"weekdays":[1],"injuries":[]}';
+    v_plan jsonb := '{"id":"b8111111-1111-4111-8111-111111111111","title":"No-video verification plan","summary":"A persistence fixture.","safety_note":"General fitness guidance.","days":[{"weekday":1,"focus":"Balanced training","duration_min":20,"exercises":[{"slug":"verification-no-video-core","name":"No-video core fixture","sets":2,"reps":"8-10","rest_sec":60,"note":"A fixture.","video":null},{"slug":"verification-no-video-upper","name":"No-video upper fixture","sets":2,"reps":"8-10","rest_sec":60,"note":"A fixture.","video":null},{"slug":"verification-no-video-lower","name":"No-video lower fixture","sets":2,"reps":"8-10","rest_sec":60,"note":"A fixture.","video":null}]}]}';
+    v_second_plan jsonb;
+    v_generated_plan jsonb;
+    v_result jsonb;
+    v_attempt uuid;
+    v_generated_attempt uuid;
+begin
+    v_result := public.save_fallback_plan(v_fallback_user,v_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_plan)
+        and (select plan_json=v_plan and input_snapshot=v_snapshot and active from public.workout_plans where id=(v_plan->>'id')::uuid)
+        and (select count(*)=3 and bool_and(exercise ? 'video' and exercise->'video'='null'::jsonb)
+             from jsonb_array_elements(v_result#>'{plan,days,0,exercises}') exercise),
+        'save_fallback_plan round-trips explicit video null for every exercise');
+    perform pg_temp.assert_true(public.coin_balance(v_fallback_user)=20
+        and not exists(select 1 from app_private.plan_generation_attempts where user_id=v_fallback_user),
+        'a no-video fallback awards twenty coins without consuming an AI attempt');
+    v_result := public.save_fallback_plan(v_fallback_user,v_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_plan)
+        and (select count(*)=1 from public.workout_plans where user_id=v_fallback_user)
+        and public.coin_balance(v_fallback_user)=20,
+        'replaying a no-video fallback does not duplicate its plan or first-plan reward');
+
+    v_second_plan := jsonb_set(v_plan,'{id}','"b8222222-2222-4222-8222-222222222222"');
+    v_attempt := public.reserve_plan_generation(v_fallback_user);
+    v_result := public.save_generated_plan(v_fallback_user,v_attempt,v_second_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_second_plan)
+        and (select plan_json=v_second_plan and active from public.workout_plans where id=(v_second_plan->>'id')::uuid)
+        and (select count(*)=1 from public.workout_plans where user_id=v_fallback_user and active)
+        and not (select active from public.workout_plans where id=(v_plan->>'id')::uuid)
+        and public.coin_balance(v_fallback_user)=20
+        and (select count(*)=1 from public.coin_ledger where user_id=v_fallback_user and reason='first_plan'),
+        'save_generated_plan preserves video null and replaces the active fallback without repeating its reward');
+    v_result := public.save_generated_plan(v_fallback_user,v_attempt,v_second_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_second_plan)
+        and (select count(*)=2 from public.workout_plans where user_id=v_fallback_user)
+        and (select plan_id=(v_second_plan->>'id')::uuid from app_private.plan_generation_attempts where id=v_attempt)
+        and public.coin_balance(v_fallback_user)=20,
+        'replaying a metered no-video plan remains idempotent for its generation attempt');
+
+    v_generated_plan := jsonb_set(v_plan,'{id}','"b8333333-3333-4333-8333-333333333333"');
+    v_generated_attempt := public.reserve_plan_generation(v_generated_user);
+    v_result := public.save_generated_plan(v_generated_user,v_generated_attempt,v_generated_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_generated_plan)
+        and public.coin_balance(v_generated_user)=20
+        and (select count(*)=1 from public.coin_ledger where user_id=v_generated_user and reason='first_plan'),
+        'a first metered no-video plan also awards exactly twenty coins');
+    perform pg_temp.expect_error(format('insert into public.workout_plans(user_id,input_snapshot,plan_json) values(%L,%L::jsonb,%L::jsonb)',
+        v_generated_user,v_snapshot,'{}'),'23505',null,
+        'no-video plans remain protected by the one-active-plan unique index');
+    v_generated_plan := jsonb_set(v_generated_plan,'{id}','"b8444444-4444-4444-8444-444444444444"');
+    v_result := public.save_fallback_plan(v_generated_user,v_generated_plan,v_snapshot);
+    perform pg_temp.assert_true(v_result=jsonb_build_object('plan',v_generated_plan)
+        and (select count(*)=1 from public.workout_plans where user_id=v_generated_user and active)
+        and (select count(*)=1 from app_private.plan_generation_attempts where user_id=v_generated_user)
+        and public.coin_balance(v_generated_user)=20
+        and (select count(*)=1 from public.coin_ledger where user_id=v_generated_user and reason='first_plan'),
+        'a later no-video fallback replaces a metered plan without an extra attempt or reward');
+end;
+$$;
+reset role;
+rollback;

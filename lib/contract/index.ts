@@ -311,6 +311,7 @@ export const HTTP_STATUS = {
 } as const;
 
 export const API_ROUTES = {
+  assistant: "/api/assistant",
   me: "/api/me",
   onboarding: "/api/onboarding",
   planGenerate: "/api/plan/generate",
@@ -326,3 +327,5 @@ export const API_ROUTES = {
   partnerStats: (partnerId: string) =>
     `/api/partner/stats?partner_id=${encodeURIComponent(partnerId)}`,
 } as const;
+
+export * from "./assistant.ts";
