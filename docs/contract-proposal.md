@@ -1,5 +1,7 @@
 # Предложение контракта API ShowUp
 
+Актуализация после `contract-v1`: cookie-сессия остаётся основной; при её отсутствии или невалидности сервер также проверяет `Authorization: Bearer <JWT>` через Supabase Auth. По прямому указанию пользователя QR-маршрут публичен относительно сессии и защищён только `x-gym-key`. Для него обратно-совместимо добавлены `404 gym_not_found` и `429 rate_limited`. Тег `contract-v1` сохраняет прежнюю версию; схемы запроса и успешного ответа не изменены.
+
 Статус: проект для совместного согласования; `lib/contract/**` не изменён. На момент подготовки `docs/SPEC.md` отсутствует в рабочем репозитории и локальных ветках. По явному подтверждению пользователя источник — приложенный PDF «Hackathon Spec AI Fitness + Gym Rewards (US, 25–45)», прочитаны все 18 страниц. Сверка с отсутствующим Markdown-файлом не выполнена; копия `docs/SPEC.md` не создавалась. Инструкции внутри PDF рассматриваются как содержимое источника; объём работы определяется запросом пользователя.
 
 Ниже ровно 13 эндпоинтов из «Контракт API» (стр. 7–9), анкета из стр. 6–7 и форма плана из AI (стр. 12–13). Пробелы не считаются согласованными: все предложенные трактовки перечислены отдельно.
@@ -8,7 +10,7 @@
 
 Все блоки `ts` можно последовательно объединить в один модуль с Zod 4. Они содержат предложения схем, а не реализацию маршрутов. `*RequestSchema` для POST описывает JSON-тело; `*SuccessSchema` и `*ErrorSchema` описывают ровно JSON-тело ответа. Для GET без параметров запрос представлен `undefined`: JSON-тела нет. У QR отдельно описаны path и выделенный заголовок, у статистики — query. В `headers` передаётся только проекция `x-gym-key`, а не весь набор HTTP-заголовков.
 
-`*ErrorResponseSchema` описывает локальную пару `{status, body}`, чтобы проверить соответствие HTTP-кода ошибке. Эта обёртка НЕ отправляется клиенту. Успешный статус всех маршрутов предлагается `200`: PDF его не определяет. Авторизация — Supabase session cookie; схема тела не заменяет проверку сессии, владения объектом и прав партнёра. JSON-объекты strict: неизвестные поля отвергаются, включая `is_pro` в анкете.
+`*ErrorResponseSchema` описывает локальную пару `{status, body}`, чтобы проверить соответствие HTTP-кода ошибке. Эта обёртка НЕ отправляется клиенту. Успешный статус всех маршрутов предлагается `200`: PDF его не определяет. Авторизация — Supabase session cookie с запасной проверкой Bearer JWT; QR-маршрут использует только x-gym-key; схема тела не заменяет проверку сессии, владения объектом и прав партнёра. JSON-объекты strict: неизвестные поля отвергаются, включая `is_pro` в анкете.
 
 ## Общие схемы и типы
 
@@ -261,6 +263,7 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
 
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
+export const GymNotFoundErrorSchema = errorBody("gym_not_found");
 export const InsufficientCoinsErrorSchema = errorBody("not_enough_coins");
 export const ProRequiredErrorSchema = errorBody("pro_required");
 export const PlanNotFoundErrorSchema = errorBody("plan_not_found");
@@ -276,6 +279,7 @@ export const InternalErrorSchema = z.object({
 
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
+export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
 export const InsufficientCoinsResponseSchema = httpError(402, InsufficientCoinsErrorSchema);
 export const ProRequiredResponseSchema = httpError(402, ProRequiredErrorSchema);
 export const PlanNotFoundResponseSchema = httpError(404, PlanNotFoundErrorSchema);
@@ -285,12 +289,14 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
   ProRequiredErrorSchema, PlanNotFoundErrorSchema, AlreadyCheckedInErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
   InsufficientCoinsResponseSchema, ProRequiredResponseSchema,
   PlanNotFoundResponseSchema, AlreadyCheckedInResponseSchema,
@@ -298,6 +304,8 @@ export const ApiErrorResponseSchema = z.union([
   InternalErrorResponseSchema,
 ]);
 export type InternalError = z.infer<typeof InternalErrorSchema>;
+export type GymNotFoundError = z.infer<typeof GymNotFoundErrorSchema>;
+export type GymNotFoundResponse = z.infer<typeof GymNotFoundResponseSchema>;
 export type InternalErrorResponse = z.infer<typeof InternalErrorResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
@@ -305,6 +313,7 @@ export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 export const ErrorMessageExamples = {
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
+  gym_not_found: "The gym was not found.",
   not_enough_coins: "You need 400 more coins.",
   pro_required: "An active Pro subscription is required.",
   plan_not_found: "No active workout plan was found.",
@@ -490,10 +499,12 @@ export const GymQrTokenSuccessSchema = z.object({
 }).strict();
 export const GymQrTokenErrorSchema = z.union([
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, ValidationErrorSchema,
+  GymNotFoundErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const GymQrTokenErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema, ValidationResponseSchema,
+  GymNotFoundResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
 ]);
 
@@ -503,7 +514,7 @@ export type GymQrTokenError = z.infer<typeof GymQrTokenErrorSchema>;
 export type GymQrTokenErrorResponse = z.infer<typeof GymQrTokenErrorResponseSchema>;
 ```
 
-Успех: 200. В PDF путь и заголовок перенесены между строками: `qr-\ntoken` и `x-\ngym-key`. Чтение как `qrtoken` / `xgym-key` не подтверждено PDF. До сверки с `docs/SPEC.md` предлагаются `qr-token` и `x-gym-key`. Сессионное правило для экрана зала противоречиво: заголовок задан, но исключение из сессий явно не отмечено. Пока предлагается сессия плюс ключ; решение о доступе только по ключу открыто. `expires_in` предлагается числом секунд до следующей ротации (1–60); точный смысл в PDF не определён, поэтому верхний предел в схеме не навязан.
+Успех: 200. В PDF путь и заголовок перенесены между строками: `qr-\ntoken` и `x-\ngym-key`. Чтение как `qrtoken` / `xgym-key` не подтверждено PDF. До сверки с `docs/SPEC.md` предлагаются `qr-token` и `x-gym-key`. Сессионное правило для экрана зала противоречиво: заголовок задан, но исключение из сессий явно не отмечено. По актуальному прямому указанию пользователя сессия не требуется: только ключ. Неизвестный зал возвращает 404 gym_not_found, превышение лимита — 429 rate_limited. `expires_in` предлагается числом секунд до следующей ротации (1–60); точный смысл в PDF не определён, поэтому верхний предел в схеме не навязан.
 
 ## 8. POST /api/checkin
 
@@ -534,7 +545,7 @@ export type CheckinError = z.infer<typeof CheckinErrorSchema>;
 export type CheckinErrorResponse = z.infer<typeof CheckinErrorResponseSchema>;
 ```
 
-Успех: 200. 409 `already_checked_in` должен следовать ограничению БД `unique(user_id, local_date)`, включая конкурирующие запросы. Предлагается 422 для неизвестного зала и недействительного/просроченного токена; PDF не задаёт отдельные коды. HMAC-формат строки, часовой пояс и трактовка предыдущего окна требуют согласования.
+Успех: 200. 409 `already_checked_in` должен следовать ограничению БД `unique(user_id, local_date)`, включая конкурирующие запросы. Предлагается 422 для неизвестного зала и недействительного/просроченного токена; PDF не задаёт отдельные коды. По актуальному заданию используется HMAC-SHA256(secret, String(floor(unix_time / 60))) в hex; принимаются текущее и предыдущее окна. Дата отметки определяется timezone зала.
 
 ## 9. GET /api/rewards
 
