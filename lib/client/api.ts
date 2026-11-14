@@ -81,3 +81,12 @@ export async function apiRequest<S extends z.ZodType>(
   }
   return { ok: true, data: parsed.data };
 }
+
+/** POST a JSON body to a documented `/api/**` route. */
+export function apiPost<S extends z.ZodType>(path: string, schema: S, body: unknown) {
+  return apiRequest(path, schema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}

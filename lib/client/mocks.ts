@@ -5,10 +5,20 @@
  * "Mock data" badge whenever these are in use so nobody mistakes them for live data.
  * Switch a route off here (or the whole flag) as soon as the backend endpoint works.
  *
- * Scenarios for checking UI states: add `?mock=<scenario>` to the page URL.
+ * Scenarios for checking UI states: add `?mock=<scenario>` to any page URL. The choice
+ * sticks for the browser tab (sessionStorage) so it survives navigation; `?mock=default`
+ * resets the scenario and anything the mock "saved" (onboarding answers, generated plan).
  */
-import type { MeResponse, Plan, PlanDay, RewardsResponse, Weekday } from "@/lib/contract";
-import { API_ROUTES } from "@/lib/contract";
+import type {
+  MeResponse,
+  OnboardingRequest,
+  Plan,
+  PlanDay,
+  Profile,
+  RewardsResponse,
+  Weekday,
+} from "@/lib/contract";
+import { API_ROUTES, OnboardingRequestSchema } from "@/lib/contract";
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
@@ -23,15 +33,64 @@ export const MOCK_SCENARIOS = [
   "unauthorized",
   "offline",
   "slow",
+  "generate_error",
+  "rate_limited",
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
+const SCENARIO_KEY = "showup.mock.scenario";
+const DB_KEY = "showup.mock.db";
+
+function storage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+const isScenario = (v: string | null): v is MockScenario =>
+  (MOCK_SCENARIOS as readonly string[]).includes(v ?? "");
+
 export function getMockScenario(): MockScenario {
   if (typeof window === "undefined") return "default";
-  const value = new URLSearchParams(window.location.search).get("mock");
-  return (MOCK_SCENARIOS as readonly string[]).includes(value ?? "")
-    ? (value as MockScenario)
-    : "default";
+  const fromUrl = new URLSearchParams(window.location.search).get("mock");
+  const s = storage();
+  try {
+    if (isScenario(fromUrl)) {
+      if (fromUrl === "default") {
+        s?.removeItem(SCENARIO_KEY);
+        s?.removeItem(DB_KEY);
+      } else if (s?.getItem(SCENARIO_KEY) !== fromUrl) {
+        s?.setItem(SCENARIO_KEY, fromUrl);
+        s?.removeItem(DB_KEY);
+      }
+      return fromUrl;
+    }
+    const saved = s?.getItem(SCENARIO_KEY) ?? null;
+    return isScenario(saved) ? saved : "default";
+  } catch {
+    return isScenario(fromUrl) ? fromUrl : "default";
+  }
+}
+
+/** What the mock backend has "stored" for this tab. */
+type MockDb = { profile?: Profile; onboarding?: OnboardingRequest; plan?: Plan };
+
+function readDb(): MockDb {
+  try {
+    return JSON.parse(storage()?.getItem(DB_KEY) ?? "{}") as MockDb;
+  } catch {
+    return {};
+  }
+}
+
+function writeDb(db: MockDb) {
+  try {
+    storage()?.setItem(DB_KEY, JSON.stringify(db));
+  } catch {
+    // Storage blocked: the mock simply forgets; nothing else depends on it.
+  }
 }
 
 const isoWeekday = (d: Date): Weekday => (((d.getDay() + 6) % 7) + 1) as Weekday;
@@ -89,31 +148,6 @@ function mockPlan(today: Date, restToday: boolean): Plan {
   };
 }
 
-function mockMe(scenario: MockScenario, plan: Plan): MeResponse {
-  if (scenario === "new_user") {
-    return { profile: null, coins_balance: 0, streak: 0, is_pro: false, has_plan: false };
-  }
-  const isPro = scenario === "pro";
-  return {
-    profile: {
-      id: "mock-user-0001",
-      display_name: "Alex",
-      height_cm: 178,
-      weight_kg: 80,
-      goal: "get_stronger",
-      workout_types: ["gym_strength"],
-      session_minutes: 45,
-      weekdays: plan.days.map((d) => d.weekday),
-      injuries: [],
-      home_gym_id: "mock-gym-01",
-      is_pro: isPro,
-    },
-    coins_balance: 640,
-    streak: 6,
-    is_pro: isPro,
-    has_plan: scenario !== "no_plan",
-  };
-}
 
 const MOCK_REWARDS: RewardsResponse = {
   rewards: [
@@ -123,43 +157,176 @@ const MOCK_REWARDS: RewardsResponse = {
   ],
 };
 
+
+function mockMe(scenario: MockScenario, plan: Plan, db: MockDb): MeResponse {
+  const isPro = scenario === "pro";
+  const fresh = scenario === "new_user";
+  const profile: Profile | null =
+    db.profile ??
+    (fresh
+      ? null
+      : {
+          id: "mock-user-0001",
+          display_name: "Alex",
+          height_cm: 178,
+          weight_kg: 80,
+          goal: "get_stronger",
+          workout_types: ["gym_strength"],
+          session_minutes: 45,
+          weekdays: plan.days.map((d) => d.weekday),
+          injuries: [],
+          home_gym_id: "mock-gym-01",
+          is_pro: isPro,
+        });
+  return {
+    profile,
+    // New users earn 20 coins for their first AI plan (SPEC §7).
+    coins_balance: fresh ? (db.plan ? 20 : 0) : 640,
+    streak: fresh ? 0 : 6,
+    is_pro: isPro,
+    has_plan: !!db.plan || (!fresh && scenario !== "no_plan"),
+  };
+}
+
+const TITLES: Record<OnboardingRequest["goal"], string> = {
+  lose_fat: "Lean Engine",
+  build_muscle: "Build Phase",
+  get_stronger: "Strength Foundations",
+  general_fitness: "Everyday Athlete",
+  endurance: "Engine Builder",
+};
+
+const EQUIPMENT_LABEL: Record<OnboardingRequest["equipment"][number], string> = {
+  full_gym: "full gym",
+  dumbbells: "dumbbells",
+  bands: "bands",
+  none: "no equipment",
+};
+
+/** Exercises per session from the plan prompt in SPEC §8 (lower bound of each range). */
+const EXERCISES_FOR: Record<number, number> = { 20: 3, 30: 4, 45: 5, 60: 6, 75: 7 };
+
+/** Mirrors what the backend returns from POST /api/plan/generate, built from saved answers. */
+function mockGeneratedPlan(input: OnboardingRequest): Plan {
+  const n = input.weekdays.length;
+  const count = EXERCISES_FOR[input.session_minutes] ?? 5;
+  const ongoing = input.injuries.some((i) => i.status === "ongoing");
+  return {
+    id: `mock-plan-${Date.now().toString(36)}`,
+    title: TITLES[input.goal],
+    summary: `${n} day${n > 1 ? "s" : ""} a week, ${input.session_minutes} minutes, ${input.equipment
+      .map((e) => EQUIPMENT_LABEL[e])
+      .join(" + ")}`,
+    days: input.weekdays.map((weekday, i) => {
+      const t = DAY_TEMPLATES[i % DAY_TEMPLATES.length];
+      return { weekday, focus: t.focus, duration_min: input.session_minutes, exercises: t.exercises.slice(0, count) };
+    }),
+    safety_note:
+      "This plan is general fitness guidance, not medical advice." +
+      (ongoing ? " Because you have an ongoing injury, check with a doctor before you start." : ""),
+  };
+}
+
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 
+const err = (status: number, code: string, message: string) => json(status, { error: { code, message } });
+
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Only GETs are mocked so far; mutations get mocks with their screens. */
-export async function mockFetch(path: string, init?: RequestInit): Promise<Response> {
-  if (init?.method && init.method !== "GET") {
-    return json(501, { error: { code: "not_mocked", message: `No mock for ${init.method} ${path} yet.` } });
+function readBody(init?: RequestInit): unknown {
+  try {
+    return JSON.parse(String(init?.body ?? "{}"));
+  } catch {
+    return null;
   }
+}
+
+export async function mockFetch(path: string, init?: RequestInit): Promise<Response> {
   const scenario = getMockScenario();
-  await delay(scenario === "slow" ? 2500 : 350 + Math.random() * 300);
+  const method = init?.method ?? "GET";
+  const isGenerate = method === "POST" && path === API_ROUTES.planGenerate;
+  // SPEC §6: generation takes 5–15 s; the mock sits at the fast end.
+  await delay(scenario === "slow" ? 2500 : isGenerate ? 5200 : 350 + Math.random() * 300);
 
   if (scenario === "offline") throw new TypeError("Failed to fetch (mock offline)");
-  if (scenario === "unauthorized") {
-    return json(401, { error: { code: "unauthorized", message: "Please sign in to continue." } });
-  }
-  if (scenario === "error") {
-    return json(500, { error: { code: "internal_error", message: "Something went wrong on our side. Please try again." } });
-  }
+  if (scenario === "unauthorized") return err(401, "unauthorized", "Please sign in to continue.");
+  if (scenario === "error") return err(500, "internal_error", "Something went wrong on our side. Please try again.");
 
-  const plan = mockPlan(new Date(), scenario === "rest_day");
+  const db = readDb();
+  const plan = db.plan ?? mockPlan(new Date(), scenario === "rest_day");
+
+  if (method === "POST") {
+    switch (path) {
+      case API_ROUTES.onboarding: {
+        const parsed = OnboardingRequestSchema.safeParse(readBody(init));
+        if (!parsed.success) return err(422, "invalid_data", "Some answers look off. Please review them.");
+        const input = parsed.data;
+        const profile: Profile = {
+          id: "mock-user-0001",
+          display_name: db.profile?.display_name ?? (scenario === "new_user" ? null : "Alex"),
+          height_cm: input.height_cm,
+          weight_kg: input.weight_kg,
+          goal: input.goal,
+          workout_types: input.workout_types,
+          session_minutes: input.session_minutes,
+          weekdays: input.weekdays,
+          injuries: input.injuries,
+          home_gym_id: null,
+          is_pro: scenario === "pro",
+        };
+        writeDb({ ...db, profile, onboarding: input });
+        return json(200, { profile });
+      }
+      case API_ROUTES.planGenerate: {
+        if (scenario === "rate_limited") {
+          return err(429, "rate_limited", "Free accounts can generate 1 plan per week. Go Pro for unlimited plans.");
+        }
+        if (scenario === "generate_error") {
+          return err(503, "ai_unavailable", "Our AI coach is busy right now. Please try again.");
+        }
+        // The real server reads the profile; scenarios that start "already onboarded" have none saved here.
+        const fallback: OnboardingRequest | undefined =
+          scenario === "new_user"
+            ? undefined
+            : {
+                age: 32,
+                height_cm: 178,
+                weight_kg: 80,
+                injuries: [],
+                goal: "get_stronger",
+                workout_types: ["gym_strength"],
+                equipment: ["full_gym"],
+                session_minutes: 45,
+                weekdays: [1, 3, 5],
+              };
+        const input = db.onboarding ?? fallback;
+        if (!input) {
+          return err(422, "onboarding_required", "Complete onboarding before generating a plan.");
+        }
+        const generated = mockGeneratedPlan(input);
+        writeDb({ ...db, plan: generated });
+        return json(200, { plan: generated });
+      }
+      default:
+        return err(501, "not_mocked", `No mock for POST ${path} yet.`);
+    }
+  }
 
   switch (path) {
     case API_ROUTES.me:
-      return json(200, mockMe(scenario, plan));
+      return json(200, mockMe(scenario, plan, db));
     case API_ROUTES.planActive:
-      if (scenario === "no_plan" || scenario === "new_user") {
-        return json(404, { error: { code: "not_found", message: "No active plan yet." } });
+      if (!db.plan && (scenario === "no_plan" || scenario === "new_user")) {
+        return err(404, "not_found", "No active plan yet.");
       }
       return json(200, { plan });
     case API_ROUTES.rewards:
       return json(200, scenario === "empty_rewards" ? { rewards: [] } : MOCK_REWARDS);
     default:
-      return json(404, { error: { code: "not_mocked", message: `No mock for ${path} yet.` } });
+      return err(404, "not_mocked", `No mock for ${path} yet.`);
   }
 }

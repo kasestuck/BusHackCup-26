@@ -23,5 +23,5 @@ Frontend role:
 - Design system "Dark Athletic Performance": tokens in `styles/globals.css` (use `bg-surface`, `text-muted`, `border-line`, `text-lime`, `font-display`, `text-hero`/`text-metric`; never raw hex in components).
 - UI primitives in `components/ui/*`; shell/nav in `components/shell/*`; feature sections in `components/<feature>/*`.
 - All API calls go through `lib/client/api.ts` (`apiRequest`) or `useApi` and are validated with zod schemas from `lib/contract`.
-- Mocks live only in `lib/client/mocks.ts`; check UI states with `?mock=rest_day|new_user|no_plan|empty_rewards|pro|error|unauthorized|offline|slow`.
+- Mocks live only in `lib/client/mocks.ts`; check UI states with `?mock=rest_day|new_user|no_plan|empty_rewards|pro|error|unauthorized|offline|slow|generate_error|rate_limited` (sticks for the tab; `?mock=default` resets).
 - Commands: `npm run dev`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.

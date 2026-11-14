@@ -15,7 +15,8 @@ npm run dev                  # http://localhost:3000 → /dashboard
 Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
 With mocks on, a "Mock data" badge is shown in the header. Preview UI states with
-`/dashboard?mock=rest_day | new_user | no_plan | empty_rewards | pro | error | unauthorized | offline | slow`.
+`?mock=rest_day | new_user | no_plan | empty_rewards | pro | error | unauthorized | offline | slow | generate_error | rate_limited`
+on any page. The scenario sticks for the browser tab; `?mock=default` resets it and the mock's saved answers.
 
 ## Structure
 
