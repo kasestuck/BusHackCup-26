@@ -219,6 +219,8 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
 export const GymNotFoundErrorSchema = errorBody("gym_not_found");
+export const CatalogUnavailableErrorSchema = errorBody("catalog_unavailable");
+export const AiUnavailableErrorSchema = errorBody("ai_unavailable");
 export const InsufficientCoinsErrorSchema = errorBody("not_enough_coins");
 export const ProRequiredErrorSchema = errorBody("pro_required");
 export const PlanNotFoundErrorSchema = errorBody("plan_not_found");
@@ -235,6 +237,8 @@ export const InternalErrorSchema = z.object({
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
 export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
+export const CatalogUnavailableResponseSchema = httpError(503, CatalogUnavailableErrorSchema);
+export const AiUnavailableResponseSchema = httpError(503, AiUnavailableErrorSchema);
 export const InsufficientCoinsResponseSchema = httpError(402, InsufficientCoinsErrorSchema);
 export const ProRequiredResponseSchema = httpError(402, ProRequiredErrorSchema);
 export const PlanNotFoundResponseSchema = httpError(404, PlanNotFoundErrorSchema);
@@ -244,6 +248,7 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  CatalogUnavailableErrorSchema, AiUnavailableErrorSchema,
   GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
   ProRequiredErrorSchema, PlanNotFoundErrorSchema, AlreadyCheckedInErrorSchema,
@@ -251,6 +256,7 @@ export const ApiErrorSchema = z.union([
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  CatalogUnavailableResponseSchema, AiUnavailableResponseSchema,
   GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
   InsufficientCoinsResponseSchema, ProRequiredResponseSchema,
@@ -259,6 +265,10 @@ export const ApiErrorResponseSchema = z.union([
   InternalErrorResponseSchema,
 ]);
 export type InternalError = z.infer<typeof InternalErrorSchema>;
+export type CatalogUnavailableError = z.infer<typeof CatalogUnavailableErrorSchema>;
+export type CatalogUnavailableResponse = z.infer<typeof CatalogUnavailableResponseSchema>;
+export type AiUnavailableError = z.infer<typeof AiUnavailableErrorSchema>;
+export type AiUnavailableResponse = z.infer<typeof AiUnavailableResponseSchema>;
 export type GymNotFoundError = z.infer<typeof GymNotFoundErrorSchema>;
 export type GymNotFoundResponse = z.infer<typeof GymNotFoundResponseSchema>;
 export type InternalErrorResponse = z.infer<typeof InternalErrorResponseSchema>;
@@ -269,6 +279,8 @@ export const ErrorMessageExamples = {
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
   gym_not_found: "The gym was not found.",
+  catalog_unavailable: "Not enough verified exercises are available for this plan.",
+  ai_unavailable: "Nutrition analysis is temporarily unavailable. Please try again later.",
   not_enough_coins: "You need 400 more coins.",
   pro_required: "An active Pro subscription is required.",
   plan_not_found: "No active workout plan was found.",
@@ -327,10 +339,12 @@ export const GeneratePlanRequestSchema = EmptyRequestSchema;
 export const GeneratePlanSuccessSchema = z.object({ plan: PlanSchema }).strict();
 export const GeneratePlanErrorSchema = z.union([
   UnauthorizedErrorSchema, ValidationErrorSchema, RateLimitedErrorSchema,
+  ProRequiredErrorSchema, CatalogUnavailableErrorSchema,
   InternalErrorSchema,
 ]);
 export const GeneratePlanErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, ValidationResponseSchema, RateLimitedResponseSchema,
+  ProRequiredResponseSchema, CatalogUnavailableResponseSchema,
   InternalErrorResponseSchema,
 ]);
 
@@ -543,11 +557,13 @@ export const NutritionSuccessSchema = z.object({
 export const NutritionErrorSchema = z.union([
   UnauthorizedErrorSchema, ProRequiredErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
+  AiUnavailableErrorSchema,
   InternalErrorSchema,
 ]);
 export const NutritionErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, ProRequiredResponseSchema,
   ValidationResponseSchema, RateLimitedResponseSchema,
+  AiUnavailableResponseSchema,
   InternalErrorResponseSchema,
 ]);
 

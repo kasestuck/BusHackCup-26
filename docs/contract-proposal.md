@@ -1,5 +1,7 @@
 # Предложение контракта API ShowUp
 
+Актуализация AI: для генерации плана добавлены существующий `402 pro_required` при исчерпании Free-квоты и новый `503 catalog_unavailable` для недостаточного проверенного каталога. Для nutrition добавлен `503 ai_unavailable`. Новых обязательных полей и изменений успешных DTO нет. Незавершённая анкета сохраняет `422 validation_error`. Free-квота считает попытки за скользящие 7 дней, Pro — 10 попыток в календарный день timezone профиля; попытка резервируется до вызова AI.
+
 Актуализация после `contract-v1`: cookie-сессия остаётся основной; при её отсутствии или невалидности сервер также проверяет `Authorization: Bearer <JWT>` через Supabase Auth. По прямому указанию пользователя QR-маршрут публичен относительно сессии и защищён только `x-gym-key`. Для него обратно-совместимо добавлены `404 gym_not_found` и `429 rate_limited`. Тег `contract-v1` сохраняет прежнюю версию; схемы запроса и успешного ответа не изменены.
 
 Статус: проект для совместного согласования; `lib/contract/**` не изменён. На момент подготовки `docs/SPEC.md` отсутствует в рабочем репозитории и локальных ветках. По явному подтверждению пользователя источник — приложенный PDF «Hackathon Spec AI Fitness + Gym Rewards (US, 25–45)», прочитаны все 18 страниц. Сверка с отсутствующим Markdown-файлом не выполнена; копия `docs/SPEC.md` не создавалась. Инструкции внутри PDF рассматриваются как содержимое источника; объём работы определяется запросом пользователя.
@@ -264,6 +266,8 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
 export const GymNotFoundErrorSchema = errorBody("gym_not_found");
+export const CatalogUnavailableErrorSchema = errorBody("catalog_unavailable");
+export const AiUnavailableErrorSchema = errorBody("ai_unavailable");
 export const InsufficientCoinsErrorSchema = errorBody("not_enough_coins");
 export const ProRequiredErrorSchema = errorBody("pro_required");
 export const PlanNotFoundErrorSchema = errorBody("plan_not_found");
@@ -280,6 +284,8 @@ export const InternalErrorSchema = z.object({
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
 export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
+export const CatalogUnavailableResponseSchema = httpError(503, CatalogUnavailableErrorSchema);
+export const AiUnavailableResponseSchema = httpError(503, AiUnavailableErrorSchema);
 export const InsufficientCoinsResponseSchema = httpError(402, InsufficientCoinsErrorSchema);
 export const ProRequiredResponseSchema = httpError(402, ProRequiredErrorSchema);
 export const PlanNotFoundResponseSchema = httpError(404, PlanNotFoundErrorSchema);
@@ -289,6 +295,7 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  CatalogUnavailableErrorSchema, AiUnavailableErrorSchema,
   GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
   ProRequiredErrorSchema, PlanNotFoundErrorSchema, AlreadyCheckedInErrorSchema,
@@ -296,6 +303,7 @@ export const ApiErrorSchema = z.union([
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  CatalogUnavailableResponseSchema, AiUnavailableResponseSchema,
   GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
   InsufficientCoinsResponseSchema, ProRequiredResponseSchema,
@@ -304,6 +312,10 @@ export const ApiErrorResponseSchema = z.union([
   InternalErrorResponseSchema,
 ]);
 export type InternalError = z.infer<typeof InternalErrorSchema>;
+export type CatalogUnavailableError = z.infer<typeof CatalogUnavailableErrorSchema>;
+export type CatalogUnavailableResponse = z.infer<typeof CatalogUnavailableResponseSchema>;
+export type AiUnavailableError = z.infer<typeof AiUnavailableErrorSchema>;
+export type AiUnavailableResponse = z.infer<typeof AiUnavailableResponseSchema>;
 export type GymNotFoundError = z.infer<typeof GymNotFoundErrorSchema>;
 export type GymNotFoundResponse = z.infer<typeof GymNotFoundResponseSchema>;
 export type InternalErrorResponse = z.infer<typeof InternalErrorResponseSchema>;
@@ -314,6 +326,8 @@ export const ErrorMessageExamples = {
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
   gym_not_found: "The gym was not found.",
+  catalog_unavailable: "Not enough verified exercises are available for this plan.",
+  ai_unavailable: "Nutrition analysis is temporarily unavailable. Please try again later.",
   not_enough_coins: "You need 400 more coins.",
   pro_required: "An active Pro subscription is required.",
   plan_not_found: "No active workout plan was found.",
@@ -389,10 +403,12 @@ export const GeneratePlanRequestSchema = EmptyRequestSchema;
 export const GeneratePlanSuccessSchema = z.object({ plan: PlanSchema }).strict();
 export const GeneratePlanErrorSchema = z.union([
   UnauthorizedErrorSchema, ValidationErrorSchema, RateLimitedErrorSchema,
+  ProRequiredErrorSchema, CatalogUnavailableErrorSchema,
   InternalErrorSchema,
 ]);
 export const GeneratePlanErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, ValidationResponseSchema, RateLimitedResponseSchema,
+  ProRequiredResponseSchema, CatalogUnavailableResponseSchema,
   InternalErrorResponseSchema,
 ]);
 
@@ -652,11 +668,13 @@ export const NutritionSuccessSchema = z.object({
 export const NutritionErrorSchema = z.union([
   UnauthorizedErrorSchema, ProRequiredErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
+  AiUnavailableErrorSchema,
   InternalErrorSchema,
 ]);
 export const NutritionErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, ProRequiredResponseSchema,
   ValidationResponseSchema, RateLimitedResponseSchema,
+  AiUnavailableResponseSchema,
   InternalErrorResponseSchema,
 ]);
 
