@@ -18,7 +18,7 @@ import type {
   RewardsResponse,
   Weekday,
 } from "@/lib/contract";
-import { API_ROUTES, OnboardingRequestSchema, SessionRequestSchema } from "@/lib/contract";
+import { API_ROUTES, CheckinRequestSchema, OnboardingRequestSchema, SessionRequestSchema } from "@/lib/contract";
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
@@ -83,10 +83,37 @@ type MockDb = {
   coinsEarned?: number;
   /** Local date (YYYY-MM-DD) of the last logged session — coins pay once a day (SPEC §7). */
   lastSessionDate?: string;
+  /** Local date of the last gym check-in — one per day (SPEC §7). */
+  lastCheckinDate?: string;
 };
 
 const localDate = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/* ---------------------------- Gyms & check-in ---------------------------- */
+
+/** Demo gyms: fictional names in one US city (SPEC §11 "Demo data"). */
+const MOCK_GYMS = [
+  { id: "mock-gym-01", name: "Forge Athletic Club", city: "Austin, TX", address: "1200 E 6th St" },
+  { id: "mock-gym-02", name: "Northline Strength", city: "Austin, TX", address: "4800 Burnet Rd" },
+  { id: "mock-gym-03", name: "Riverside Performance", city: "Austin, TX", address: "300 S Lamar Blvd" },
+];
+
+/**
+ * Stand-in for HMAC_SHA256(qr_secret, floor(unix/60)) — a 6-digit code per gym per minute.
+ * Not secure; only shapes and timing match the real endpoint.
+ */
+function mockToken(gymId: string, window: number): string {
+  let h = 2166136261;
+  for (const c of `${gymId}:${window}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return String((h >>> 0) % 1_000_000).padStart(6, "0");
+}
+
+const minuteWindow = () => Math.floor(Date.now() / 60_000);
+
+function baseStreak(scenario: MockScenario) {
+  return scenario === "new_user" ? 0 : 6;
+}
 
 function baseBalance(scenario: MockScenario, db: MockDb) {
   return scenario === "new_user" ? (db.plan ? 20 : 0) : 640;
@@ -197,7 +224,7 @@ function mockMe(scenario: MockScenario, plan: Plan, db: MockDb): MeResponse {
     profile,
     // New users earn 20 coins for their first AI plan (SPEC §7).
     coins_balance: baseBalance(scenario, db) + (db.coinsEarned ?? 0),
-    streak: fresh ? 0 : 6,
+    streak: baseStreak(scenario) + (db.lastCheckinDate === localDate() ? 1 : 0),
     is_pro: isPro,
     has_plan: !!db.plan || (!fresh && scenario !== "no_plan"),
   };
@@ -296,6 +323,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
       }
+      case API_ROUTES.checkin: {
+        const parsed = CheckinRequestSchema.safeParse(readBody(init));
+        if (!parsed.success) return err(422, "invalid_data", "Pick a gym and enter the code.");
+        const { gym_id, token } = parsed.data;
+        if (!MOCK_GYMS.some((g) => g.id === gym_id)) return err(422, "unknown_gym", "That gym isn't a ShowUp partner.");
+        const w = minuteWindow();
+        // Current and previous window are accepted so a scan at the minute boundary still works.
+        if (token !== mockToken(gym_id, w) && token !== mockToken(gym_id, w - 1)) {
+          return err(422, "invalid_token", "That code has expired or doesn't match this gym. Use the latest code on the gym screen.");
+        }
+        const today = localDate();
+        if (db.lastCheckinDate === today) {
+          return err(409, "already_checked_in", "You've already checked in today. Come back tomorrow.");
+        }
+        const coinsEarned = (db.coinsEarned ?? 0) + 40;
+        writeDb({ ...db, coinsEarned, lastCheckinDate: today });
+        return json(200, {
+          coins_earned: 40,
+          streak: baseStreak(scenario) + 1,
+          balance: baseBalance(scenario, db) + coinsEarned,
+        });
+      }
       case API_ROUTES.sessions: {
         const parsed = SessionRequestSchema.safeParse(readBody(init));
         if (!parsed.success || parsed.data.exercises.length === 0) {
@@ -345,7 +394,19 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  const qr = path.match(/^\/api\/gyms\/([^/]+)\/qr-token$/);
+  if (qr) {
+    const headers = new Headers(init?.headers);
+    if (!headers.get("x-gym-key")) return err(401, "invalid_gym_key", "Gym key missing or wrong.");
+    const id = decodeURIComponent(qr[1]);
+    if (!MOCK_GYMS.some((g) => g.id === id)) return err(404, "not_found", "Gym not found.");
+    const now = Date.now() / 1000;
+    return json(200, { token: mockToken(id, minuteWindow()), expires_in: Math.ceil(60 - (now % 60)) });
+  }
+
   switch (path) {
+    case API_ROUTES.gyms:
+      return json(200, { gyms: MOCK_GYMS });
     case API_ROUTES.me:
       return json(200, mockMe(scenario, plan, db));
     case API_ROUTES.planActive:
