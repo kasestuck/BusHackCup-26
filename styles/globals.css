@@ -94,6 +94,7 @@
   --animate-fill: su-fill 1100ms var(--su-ease-out) both;
   --animate-shimmer: su-shimmer 1.6s linear infinite;
   --animate-pulse-dot: su-pulse 2.4s ease-in-out infinite;
+  --animate-scan: su-scan 1.6s var(--su-ease-out) infinite;
 }
 
 /* Spacing uses Tailwind's 4px base scale (p-1 = 4px … p-16 = 64px).
@@ -122,6 +123,15 @@
   }
   to {
     background-position: -50% 0;
+  }
+}
+
+@keyframes su-scan {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
   }
 }
 

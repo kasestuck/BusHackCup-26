@@ -145,7 +145,7 @@ export function NoPlanCard({ me }: { me: MeResponse }) {
             : "Height, weight, injuries, goal, schedule and equipment. Two minutes, then your AI plan is ready."}
         </p>
       </div>
-      <ButtonLink href={onboarded ? "/plan" : "/onboarding"} arrow className="w-full sm:w-auto">
+      <ButtonLink href={onboarded ? "/onboarding/generate" : "/onboarding"} arrow className="w-full sm:w-auto">
         {onboarded ? "Generate my plan" : "Start onboarding"}
       </ButtonLink>
     </Card>

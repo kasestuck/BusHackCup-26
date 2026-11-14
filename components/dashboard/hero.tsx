@@ -49,7 +49,7 @@ export function Hero({
               Start Workout
             </ButtonLink>
           ) : (
-            <ButtonLink href={onboarded ? "/plan" : "/onboarding"} size="lg" arrow>
+            <ButtonLink href={onboarded ? "/onboarding/generate" : "/onboarding"} size="lg" arrow>
               {onboarded ? "Generate my plan" : "Build my plan"}
             </ButtonLink>
           )}
