@@ -43,6 +43,8 @@ export function authErrorMessage(e: { code?: string; status?: number; message?: 
       return "That link has expired. Request a new one.";
     case "signup_disabled":
       return "Sign-ups are closed right now.";
+    case "anonymous_provider_disabled":
+      return "Guest access is turned off. Enable Anonymous sign-ins in Supabase, or create an account.";
   }
   if (e.status === 429) return "Too many attempts. Give it a minute and try again.";
   if (e.status === 0 || e.message === "Failed to fetch") return "We couldn't reach ShowUp. Check your connection.";

@@ -136,6 +136,30 @@ export async function exchangeCode(code: string): Promise<AuthResult> {
   }
 }
 
+/**
+ * One-click guest access for demos and judges: a real Supabase anonymous user with a
+ * normal cookie session, so every /api/** call works as for any account.
+ * Requires "Anonymous sign-ins" enabled in Supabase → Authentication → Providers.
+ * Guests start fresh and go through onboarding.
+ */
+export async function continueAsGuest(): Promise<AuthResult> {
+  if (AUTH_MODE === "unconfigured") return UNCONFIGURED;
+  if (AUTH_MODE === "mock") {
+    await mockDelay();
+    setMockScenario("new_user", { clearData: true });
+    invalidateApi();
+    return { ok: true };
+  }
+  try {
+    const { error } = await supabase().auth.signInAnonymously();
+    if (error) return fail(error);
+    invalidateApi();
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function signOut(): Promise<AuthResult> {
   if (AUTH_MODE === "unconfigured") return UNCONFIGURED;
   if (AUTH_MODE === "mock") {
@@ -154,12 +178,15 @@ export async function signOut(): Promise<AuthResult> {
   }
 }
 
-/** Email of the signed-in account, for display. null when signed out or unknown. */
-export async function getAccountEmail(): Promise<string | null> {
+export type AccountInfo = { email: string | null; isGuest: boolean };
+
+/** Who is signed in, for display. Guests (anonymous users) have no email. */
+export async function getAccountInfo(): Promise<AccountInfo | null> {
   if (AUTH_MODE !== "supabase") return null;
   try {
     const { data } = await supabase().auth.getUser();
-    return data.user?.email ?? null;
+    if (!data.user) return null;
+    return { email: data.user.email ?? null, isGuest: !!data.user.is_anonymous };
   } catch {
     return null;
   }

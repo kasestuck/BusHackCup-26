@@ -24,6 +24,7 @@ test("isEmail and passwordProblem", () => {
 test("authErrorMessage maps codes, then status", () => {
   assert.equal(authErrorMessage({ code: "invalid_credentials" }), "Email or password is incorrect.");
   assert.match(authErrorMessage({ code: "user_already_exists" }), /already exists/);
+  assert.match(authErrorMessage({ code: "anonymous_provider_disabled" }), /Guest access is turned off/);
   assert.match(authErrorMessage({ status: 429 }), /Too many/);
   assert.match(authErrorMessage({ message: "Failed to fetch" }), /connection/);
   assert.match(authErrorMessage({ code: "something_new" }), /went wrong/);

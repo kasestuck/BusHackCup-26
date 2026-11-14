@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API_ROUTES, MeResponseSchema, type Profile } from "@/lib/contract";
 import { useApi } from "@/lib/client/use-api";
-import { AUTH_MODE, getAccountEmail } from "@/lib/client/auth";
+import { AUTH_MODE, getAccountInfo, type AccountInfo } from "@/lib/client/auth";
 import { WEEKDAY_SHORT, formatNumber } from "@/lib/client/dashboard";
 import { cmToFtIn, kgToLb } from "@/lib/client/units";
 import { formatUsd } from "@/lib/client/checkout";
@@ -23,18 +23,18 @@ function Frame({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto max-w-[1120px] px-4 pt-8 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">{children}</div>;
 }
 
-function useAccountEmail() {
-  const [email, setEmail] = useState<string | null>(null);
+function useAccount() {
+  const [account, setAccount] = useState<AccountInfo | null>(null);
   useEffect(() => {
     let alive = true;
-    getAccountEmail().then((e) => {
-      if (alive) setEmail(e);
+    getAccountInfo().then((a) => {
+      if (alive) setAccount(a);
     });
     return () => {
       alive = false;
     };
   }, []);
-  return email;
+  return account;
 }
 
 function initials(name: string | null | undefined, email: string | null) {
@@ -148,14 +148,19 @@ function Membership({ isPro, coins }: { isPro: boolean; coins: number }) {
   );
 }
 
-function Account({ email }: { email: string | null }) {
+function Account({ email, isGuest }: { email: string | null; isGuest: boolean }) {
   return (
     <Card className="space-y-4 p-5">
       <h2 className="font-display text-lg font-semibold text-ink">Account</h2>
       <dl className="space-y-1">
         <dt className="text-xs text-muted">Email</dt>
         <dd className="break-all text-[0.9375rem] text-ink">
-          {email ?? (AUTH_MODE === "mock" ? "Mock account (no email in mock mode)" : "—")}
+          {email ??
+            (isGuest
+              ? "Guest account (no email)"
+              : AUTH_MODE === "mock"
+                ? "Mock account (no email in mock mode)"
+                : "—")}
         </dd>
       </dl>
       <SignOutButton className="w-full" />
@@ -168,7 +173,8 @@ function Account({ email }: { email: string | null }) {
 
 export function ProfileView() {
   const [me, retry] = useApi(API_ROUTES.me, MeResponseSchema);
-  const email = useAccountEmail();
+  const account = useAccount();
+  const email = account?.email ?? null;
 
   if (me.status === "loading") {
     return (
@@ -257,7 +263,7 @@ export function ProfileView() {
           </div>
           <div className="rise space-y-4 lg:col-span-4" style={{ ["--d" as string]: "140ms" }}>
             <Membership isPro={is_pro} coins={coins_balance} />
-            <Account email={email} />
+            <Account email={email} isGuest={!!account?.isGuest} />
           </div>
         </div>
       </div>

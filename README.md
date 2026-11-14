@@ -26,6 +26,8 @@ The session is stored in cookies, so `/api/**` route handlers can read it.
 - Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local`.
 - In Supabase → Authentication → URL configuration, add `<site>/auth/callback` as a redirect URL
   (magic links and email confirmation land there).
+- "Continue without an account" signs in as a guest (Supabase anonymous user, real session).
+  Enable it in Supabase → Authentication → Providers → **Anonymous sign-ins**.
 - With `NEXT_PUBLIC_USE_MOCKS=true`, auth is mocked: any email/password works, nothing is sent.
 
 ## Structure

@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { AUTH_MODE, mockMagicLinkUrl, sendMagicLink, signInWithPassword, signUp } from "@/lib/client/auth";
+import {
+  AUTH_MODE,
+  continueAsGuest,
+  mockMagicLinkUrl,
+  sendMagicLink,
+  signInWithPassword,
+  signUp,
+} from "@/lib/client/auth";
 import { isEmail, passwordProblem, safeNext, MIN_PASSWORD } from "@/lib/client/auth-utils";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +74,45 @@ function PasswordField({
         </button>
       }
     />
+  );
+}
+
+/**
+ * One-click access without an email (hackathon judges, quick demos).
+ * Real anonymous Supabase session; guests start at onboarding.
+ */
+function GuestAccess() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="space-y-3">
+      <Button
+        variant="secondary"
+        size="lg"
+        className="w-full border-lime-line hover:border-lime"
+        disabled={busy || AUTH_MODE === "unconfigured"}
+        aria-busy={busy || undefined}
+        arrow={!busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          const res = await continueAsGuest();
+          setBusy(false);
+          if (res.ok) router.replace("/onboarding");
+          else setError(res.message);
+        }}
+      >
+        {busy ? "Opening ShowUp…" : "Continue without an account"}
+      </Button>
+      <p className="text-center text-xs text-subtle">No email or password. Jump straight in as a guest.</p>
+      <FormError message={error} />
+      <div className="flex items-center gap-3 pt-1 text-xs uppercase tracking-[0.12em] text-subtle" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        or use your email
+        <span className="h-px flex-1 bg-line" />
+      </div>
+    </div>
   );
 }
 
@@ -144,6 +190,7 @@ export function LoginForm() {
         <p className="text-muted">Log in to see today&apos;s workout, your streak and your coins.</p>
       </div>
       <ModeNotice />
+      <GuestAccess />
       <form onSubmit={onSubmit} noValidate className="space-y-5">
         <Input
           label="Email"
@@ -227,6 +274,7 @@ export function SignupForm() {
         <p className="text-muted">Create your account, then two minutes of questions for your AI plan.</p>
       </div>
       <ModeNotice />
+      <GuestAccess />
       <form onSubmit={onSubmit} noValidate className="space-y-5">
         <Input
           label="Email"
