@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
-import { ComingNext } from "@/components/shell/coming-next";
-import { IconGift } from "@/components/ui/icons";
+import { RewardsView } from "@/components/rewards/rewards-view";
 
 export const metadata: Metadata = { title: "Rewards" };
 
-export default function Page() {
-  return (
-    <ComingNext
-      title="Rewards"
-      icon={<IconGift />}
-      description="The coin marketplace (Pro month and partner promo codes) lands here next. Your balance and closest reward are on the dashboard."
-    />
-  );
+export default function RewardsPage() {
+  return <RewardsView />;
 }
