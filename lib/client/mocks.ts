@@ -6,8 +6,8 @@
  * Switch a route off here (or the whole flag) as soon as the backend endpoint works.
  *
  * Scenarios for checking UI states: add `?mock=<scenario>` to any page URL. The choice
- * sticks for the browser tab (sessionStorage) so it survives navigation; `?mock=default`
- * resets the scenario and anything the mock "saved" (onboarding answers, generated plan).
+ * sticks for the browser tab (sessionStorage) so it survives navigation. Switching scenario
+ * starts clean; `?mock=reset` clears everything the mock "saved" (answers, plan, coins).
  */
 import type {
   MeResponse,
@@ -18,7 +18,13 @@ import type {
   RewardsResponse,
   Weekday,
 } from "@/lib/contract";
-import { API_ROUTES, CheckinRequestSchema, OnboardingRequestSchema, SessionRequestSchema } from "@/lib/contract";
+import {
+  API_ROUTES,
+  CheckinRequestSchema,
+  OnboardingRequestSchema,
+  RedeemRequestSchema,
+  SessionRequestSchema,
+} from "@/lib/contract";
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
@@ -35,6 +41,7 @@ export const MOCK_SCENARIOS = [
   "slow",
   "generate_error",
   "rate_limited",
+  "rich",
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -54,20 +61,29 @@ const isScenario = (v: string | null): v is MockScenario =>
 
 export function getMockScenario(): MockScenario {
   if (typeof window === "undefined") return "default";
-  const fromUrl = new URLSearchParams(window.location.search).get("mock");
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = params.get("mock");
   const s = storage();
   try {
+    // `?mock=reset` wipes the mock's saved state once, then drops itself from the URL
+    // so later requests on the same page don't keep wiping it.
+    if (fromUrl === "reset") {
+      s?.removeItem(SCENARIO_KEY);
+      s?.removeItem(DB_KEY);
+      params.delete("mock");
+      const qs = params.toString();
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+      return "default";
+    }
+    const saved = s?.getItem(SCENARIO_KEY) ?? "default";
     if (isScenario(fromUrl)) {
-      if (fromUrl === "default") {
-        s?.removeItem(SCENARIO_KEY);
-        s?.removeItem(DB_KEY);
-      } else if (s?.getItem(SCENARIO_KEY) !== fromUrl) {
+      // Switching scenario starts from a clean slate; staying on it keeps saved state.
+      if (saved !== fromUrl) {
         s?.setItem(SCENARIO_KEY, fromUrl);
         s?.removeItem(DB_KEY);
       }
       return fromUrl;
     }
-    const saved = s?.getItem(SCENARIO_KEY) ?? null;
     return isScenario(saved) ? saved : "default";
   } catch {
     return isScenario(fromUrl) ? fromUrl : "default";
@@ -85,6 +101,10 @@ type MockDb = {
   lastSessionDate?: string;
   /** Local date of the last gym check-in — one per day (SPEC §7). */
   lastCheckinDate?: string;
+  /** Coins spent on rewards in this tab. */
+  coinsSpent?: number;
+  /** ISO end of Pro granted by redeeming "1 month of Pro". */
+  proUntil?: string;
 };
 
 const localDate = (d = new Date()) =>
@@ -116,7 +136,24 @@ function baseStreak(scenario: MockScenario) {
 }
 
 function baseBalance(scenario: MockScenario, db: MockDb) {
+  if (scenario === "rich") return 1500;
   return scenario === "new_user" ? (db.plan ? 20 : 0) : 640;
+}
+
+/** Balance = start + earned − spent, mirroring sum(coin_ledger) on the server. */
+function currentBalance(scenario: MockScenario, db: MockDb) {
+  return baseBalance(scenario, db) + (db.coinsEarned ?? 0) - (db.coinsSpent ?? 0);
+}
+
+function mockIsPro(scenario: MockScenario, db: MockDb) {
+  return scenario === "pro" || (!!db.proUntil && new Date(db.proUntil).getTime() > Date.now());
+}
+
+const PROMO_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function mockPromoCode(pct: number | null) {
+  let tail = "";
+  for (let i = 0; i < 6; i++) tail += PROMO_ALPHABET[Math.floor(Math.random() * PROMO_ALPHABET.length)];
+  return `SHOWUP${pct ?? ""}-${tail}`;
 }
 
 function readDb(): MockDb {
@@ -201,7 +238,7 @@ const MOCK_REWARDS: RewardsResponse = {
 
 
 function mockMe(scenario: MockScenario, plan: Plan, db: MockDb): MeResponse {
-  const isPro = scenario === "pro";
+  const isPro = mockIsPro(scenario, db);
   const fresh = scenario === "new_user";
   const profile: Profile | null =
     db.profile ??
@@ -223,7 +260,7 @@ function mockMe(scenario: MockScenario, plan: Plan, db: MockDb): MeResponse {
   return {
     profile,
     // New users earn 20 coins for their first AI plan (SPEC §7).
-    coins_balance: baseBalance(scenario, db) + (db.coinsEarned ?? 0),
+    coins_balance: currentBalance(scenario, db),
     streak: baseStreak(scenario) + (db.lastCheckinDate === localDate() ? 1 : 0),
     is_pro: isPro,
     has_plan: !!db.plan || (!fresh && scenario !== "no_plan"),
@@ -323,6 +360,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
       }
+      case API_ROUTES.rewardsRedeem: {
+        const parsed = RedeemRequestSchema.safeParse(readBody(init));
+        const reward = parsed.success ? MOCK_REWARDS.rewards.find((r) => r.id === parsed.data.reward_id) : undefined;
+        if (!reward || !reward.active) return err(422, "invalid_reward", "That reward isn't available.");
+        const balance = currentBalance(scenario, db);
+        if (balance < reward.cost_coins) {
+          return err(402, "not_enough_coins", `You need ${reward.cost_coins - balance} more coins.`);
+        }
+        const coinsSpent = (db.coinsSpent ?? 0) + reward.cost_coins;
+        if (reward.kind === "pro_month") {
+          // Extends from the current Pro end if still active, else from now (SPEC §7: +30 days).
+          const from = db.proUntil && new Date(db.proUntil).getTime() > Date.now() ? new Date(db.proUntil) : new Date();
+          const proUntil = new Date(from.getTime() + 30 * 86_400_000).toISOString();
+          writeDb({ ...db, coinsSpent, proUntil });
+          return json(200, { pro_until: proUntil, balance: currentBalance(scenario, { ...db, coinsSpent }) });
+        }
+        writeDb({ ...db, coinsSpent });
+        return json(200, {
+          promo_code: mockPromoCode(reward.discount_pct),
+          balance: currentBalance(scenario, { ...db, coinsSpent }),
+        });
+      }
       case API_ROUTES.checkin: {
         const parsed = CheckinRequestSchema.safeParse(readBody(init));
         if (!parsed.success) return err(422, "invalid_data", "Pick a gym and enter the code.");
@@ -342,7 +401,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         return json(200, {
           coins_earned: 40,
           streak: baseStreak(scenario) + 1,
-          balance: baseBalance(scenario, db) + coinsEarned,
+          balance: currentBalance(scenario, { ...db, coinsEarned }),
         });
       }
       case API_ROUTES.sessions: {
@@ -357,7 +416,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         const coins = db.lastSessionDate === today ? 0 : 10;
         const coinsEarned = (db.coinsEarned ?? 0) + coins;
         writeDb({ ...db, coinsEarned, lastSessionDate: today });
-        return json(200, { xp_earned: xp, coins_earned: coins, balance: baseBalance(scenario, db) + coinsEarned });
+        return json(200, { xp_earned: xp, coins_earned: coins, balance: currentBalance(scenario, { ...db, coinsEarned }) });
       }
       case API_ROUTES.planGenerate: {
         if (scenario === "rate_limited") {
