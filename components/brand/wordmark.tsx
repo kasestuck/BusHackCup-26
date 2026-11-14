@@ -15,15 +15,24 @@ export function LogoMark({ size = 28, className }: { size?: number; className?: 
   );
 }
 
-export function Wordmark({ className, href = "/dashboard" }: { className?: string; href?: string }) {
+/** `compact` shows only the mark on narrow phones (<640px), where the app header is busiest. */
+export function Wordmark({
+  className,
+  href = "/dashboard",
+  compact = false,
+}: {
+  className?: string;
+  href?: string;
+  compact?: boolean;
+}) {
   return (
     <Link
       href={href}
       aria-label="ShowUp home"
-      className={cx("inline-flex items-center gap-2.5 rounded-sm", className)}
+      className={cx("inline-flex shrink-0 items-center gap-2.5 rounded-sm", className)}
     >
       <LogoMark />
-      <span className="font-display text-[1.2rem] font-bold tracking-[-0.04em] text-ink">
+      <span className={cx("font-display text-[1.2rem] font-bold tracking-[-0.04em] text-ink", compact && "hidden sm:inline")}>
         Show<span className="text-lime">Up</span>
       </span>
     </Link>

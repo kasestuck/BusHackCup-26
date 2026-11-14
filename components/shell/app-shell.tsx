@@ -10,7 +10,16 @@ import { formatNumber } from "@/lib/client/dashboard";
 import { Wordmark } from "@/components/brand/wordmark";
 import { cx } from "@/components/ui/cx";
 import { Skeleton } from "@/components/ui/skeleton";
-import { IconBowl, IconCalendar, IconChat, IconCoin, IconGift, IconHome, IconUser } from "@/components/ui/icons";
+import {
+  IconBowl,
+  IconCalendar,
+  IconChat,
+  IconCoin,
+  IconGift,
+  IconHome,
+  IconMapPin,
+  IconUser,
+} from "@/components/ui/icons";
 
 /** `mobile: false` items stay out of the 5-slot bottom bar (Profile is the header avatar there). */
 const NAV = [
@@ -35,8 +44,26 @@ function MockBadge() {
       className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-warning/30 bg-warning-soft px-2 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-warning"
     >
       <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" />
-      Mock data
+      <span>Mock</span>
+      <span className="-ml-0.5 hidden sm:inline lg:hidden xl:inline">data</span>
     </span>
+  );
+}
+
+/**
+ * Gym check-in is the core P0 action (+40 coins, streak), so it's always one tap away:
+ * labelled lime button on larger screens, compact icon button on phones.
+ */
+function CheckInButton() {
+  return (
+    <Link
+      href="/checkin"
+      aria-label="Gym check-in"
+      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-lime px-2.5 font-display text-sm font-semibold text-lime-ink shadow-[0_0_0_1px_rgb(200_255_69/0.4),0_8px_24px_-12px_rgb(200_255_69/0.6)] transition-[background-color,transform] duration-200 hover:bg-lime-hover active:scale-95 sm:px-3.5 lg:px-2.5 xl:px-3.5"
+    >
+      <IconMapPin size={17} />
+      <span className="hidden sm:inline lg:hidden xl:inline">Check in</span>
+    </Link>
   );
 }
 
@@ -96,12 +123,13 @@ function TopNavLinks({ isActive }: { isActive: IsActive }) {
       {NAV.map(({ href, label }) => {
         const active = isActive(href);
         return (
-          <li key={href}>
+          // Profile is also the header avatar, so it gives up its slot on narrow desktops (1024–1279px).
+          <li key={href} className={href === "/profile" ? "hidden xl:list-item" : undefined}>
             <Link
               href={href}
               aria-current={active ? "page" : undefined}
               className={cx(
-                "relative inline-flex h-10 items-center rounded-md px-3.5 text-[0.9375rem] font-medium transition-colors",
+                "relative inline-flex h-10 items-center rounded-md px-2.5 text-[0.9375rem] xl:px-3.5 font-medium transition-colors",
                 active ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
@@ -109,7 +137,7 @@ function TopNavLinks({ isActive }: { isActive: IsActive }) {
               <span
                 aria-hidden="true"
                 className={cx(
-                  "absolute inset-x-3.5 -bottom-[13px] h-0.5 rounded-full bg-lime transition-opacity lg:-bottom-[17px]",
+                  "absolute inset-x-2.5 -bottom-[13px] xl:inset-x-3.5 h-0.5 rounded-full bg-lime transition-opacity lg:-bottom-[17px]",
                   active ? "opacity-100" : "opacity-0",
                 )}
               />
@@ -173,28 +201,29 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-6 px-4 sm:px-6 lg:h-[72px] lg:px-8">
-          <Wordmark />
-          <nav aria-label="Primary" className="hidden md:block">
+        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-4 px-4 sm:px-6 lg:h-[72px] lg:px-8 xl:gap-6">
+          <Wordmark compact />
+          <nav aria-label="Primary" className="hidden lg:block">
             <Suspense fallback={<TopNavLinks isActive={NONE_ACTIVE} />}>
               <ActiveTopNav />
             </Suspense>
           </nav>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <MockBadge />
+            <CheckInButton />
             <AccountArea />
           </div>
         </div>
       </header>
 
-      <main id="main" className="pb-28 md:pb-16">
+      <main id="main" className="pb-28 lg:pb-16">
         {children}
       </main>
 
       {/* Mobile bottom navigation */}
       <nav
         aria-label="Primary"
-        className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/90 backdrop-blur-xl md:hidden"
+        className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/90 backdrop-blur-xl lg:hidden"
       >
         <Suspense fallback={<BottomNavLinks isActive={NONE_ACTIVE} />}>
           <ActiveBottomNav />

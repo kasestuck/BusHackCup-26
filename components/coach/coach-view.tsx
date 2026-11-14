@@ -272,7 +272,7 @@ export function CoachView() {
       {/* Composer: sticks above the mobile bottom nav, and to the bottom on desktop. */}
       <form
         onSubmit={onSubmit}
-        className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 md:bottom-0 md:pb-6"
+        className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 lg:bottom-0 lg:pb-6"
       >
         <div className="rounded-lg border border-line-strong bg-surface/95 p-2 shadow-[0_-12px_40px_-12px_rgb(0_0_0/0.7)] backdrop-blur-xl transition-colors focus-within:border-lime-line">
           <div className="flex items-end gap-2">
