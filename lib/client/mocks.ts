@@ -485,6 +485,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (path.startsWith("/api/partner/stats")) {
+    const id = new URL(path, "http://mock.local").searchParams.get("partner_id") ?? "";
+    // Demo sales seeded per partner; commission_cents = amount_cents × 15 / 100 (SPEC §7).
+    const SALES: Record<string, number[]> = {
+      "mock-partner-01": [4599, 6299, 3899, 5499, 7999, 4599, 5999, 6799, 3499, 5299, 6499, 3855],
+      "mock-partner-02": [8999, 11499, 7299, 9999, 12999],
+      "mock-partner-03": [],
+    };
+    const sales = SALES[id];
+    if (!sales) return err(404, "not_found", "We couldn't find that partner.");
+    const revenue = sales.reduce((n, c) => n + c, 0);
+    const commission = sales.reduce((n, c) => n + Math.round((c * 15) / 100), 0);
+    return json(200, { sales_count: sales.length, revenue_cents: revenue, commission_cents: commission });
+  }
+
   const qr = path.match(/^\/api\/gyms\/([^/]+)\/qr-token$/);
   if (qr) {
     const headers = new Headers(init?.headers);
