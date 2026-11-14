@@ -15,10 +15,13 @@ type ErrorCode = ApiError["error"]["code"];
 export class HttpError extends Error {
   readonly response: ApiErrorResponse;
 
-  constructor(status: ApiErrorResponse["status"], code: ErrorCode) {
+  constructor(status: ApiErrorResponse["status"], code: ErrorCode, message?: string) {
+    if (message !== undefined && (code !== "not_enough_coins" || !/^You need [1-9][0-9]* more coins\.$/.test(message))) {
+      throw new Error("Only a validated coin shortfall message may override an API error message.");
+    }
     const response = ApiErrorResponseSchema.parse({
       status,
-      body: { error: { code, message: ErrorMessageExamples[code] } },
+      body: { error: { code, message: message ?? ErrorMessageExamples[code] } },
     });
     super(response.body.error.message);
     this.name = "HttpError";

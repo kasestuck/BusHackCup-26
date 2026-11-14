@@ -102,9 +102,11 @@ try {
     TEST_DATABASE_DISPOSABLE: '1',
   };
   execute('Schema, security and contract verification', process.execPath, [
+    '--use-system-ca',
     path.join(directory, 'verify.mjs'),
   ], { env, output: true, timeout: 60000 });
   execute('Concurrent activity and redemption verification', process.execPath, [
+    '--use-system-ca',
     path.join(directory, 'concurrency.mjs'),
   ], { env, output: true, timeout: 60000 });
 } catch (error) {

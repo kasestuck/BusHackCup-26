@@ -45,6 +45,8 @@ psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261114
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140003_activity_rewards.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140004_ai_generation.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140005_unmetered_fallback.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140006_commerce.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140007_demo_seed.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verification/assertions.sql
 ```
 

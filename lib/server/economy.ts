@@ -49,10 +49,23 @@ export const ECONOMY = Object.freeze({
     maxEntries: 10_000,
   }),
   partnerCommissionPct: 15,
+  demoPurchaseAmountCents: 4_000,
+  promoCollisionAttempts: 32,
   gymCommissionPct: 0,
   proMonthlyPriceCents: 1299,
   proPeriodDays: 30,
 });
+
+/** Commission is rounded down to whole cents using exact hundredths of a percent. */
+export function calculateCommissionCents(amountCents: number, commissionPct: number): number {
+  const basisPoints = Math.round(commissionPct * 100);
+  if (!Number.isSafeInteger(amountCents) || amountCents < 0
+    || !Number.isFinite(commissionPct) || commissionPct < 0 || commissionPct > 100
+    || Math.abs(commissionPct * 100 - basisPoints) > 1e-8) {
+    throw new RangeError("Commission requires nonnegative integer cents and a percentage with at most two decimal places.");
+  }
+  return Number(BigInt(amountCents) * BigInt(basisPoints) / 10_000n);
+}
 
 /** Award five XP per completed set, capped at one hundred XP per session. */
 export function calculateWorkoutXp(totalSets: number): number {

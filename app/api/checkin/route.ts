@@ -24,7 +24,7 @@ export const POST = withAuth(async (request, { user, supabase }) => {
   if (!gym) throw new HttpError(422, "validation_error");
   const now = new Date();
   if (!verifyGymQrToken(gym.qr_secret, input.token, now)) {
-    throw new HttpError(422, "validation_error");
+    throw new HttpError(422, "invalid_qr_token");
   }
 
   // One trusted server instant governs token acceptance and the gym's local date.

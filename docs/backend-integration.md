@@ -2,19 +2,20 @@
 
 Ветка `BACK`. Временный каркас находится в отдельном коммите `fbc5138` (`chore: throwaway scaffold (do not merge)`). При переносе в Next.js-проект фронтенда его можно пропустить. Локальный тег `contract-v1` остаётся на `c6136e2`; он не перемещался. Актуальный контракт расширен поверх этой версии.
 
-`docs/SPEC.md` отсутствует в checkout. Источник — ранее разрешённый PDF и `docs/contract-proposal.md`, с приоритетом текущих заданий пользователя. `lib/contract-draft/index.ts` дословно объединяет 17 TypeScript-блоков предложения; сервер импортирует их только через `lib/server/contract.ts`. `lib/contract/**` не изменён.
+`docs/SPEC.md` отсутствует в checkout. Источник — ранее разрешённый PDF и `docs/contract-proposal.md`, с приоритетом текущих заданий пользователя. `lib/contract-draft/index.ts` дословно объединяет 18 TypeScript-блоков предложения; сервер импортирует их только через `lib/server/contract.ts`. `lib/contract/**` не изменён.
 
 ## Изменения контракта
 
+- Commerce-этап: новый `POST /api/partner/simulate-purchase` и схемы/типы SimulatePurchase*. Реестр теперь содержит 14 эндпоинтов. Добавлены `invalid_qr_token` (422), `reward_not_found` (404), `reward_inactive` (409), `redemption_not_found` (404), `already_purchased` (409), `partner_not_found` (404). Новые ошибки включены в общие и соответствующие endpoint-union. В not_enough_coins используется разрешённое контрактом динамическое сообщение `You need N more coins.`. Обязательные поля существующих DTO и HTTP-коды существующих случаев не менялись; смена кода ошибки QR на invalid_qr_token прямо запрошена пользователем.
 - Дополнение к AI-этапу не меняет Zod-схемы, DTO или коды ошибок. По прямому указанию пользователя лимит изображения уменьшен с 5 до 4 МиБ. 503 catalog_unavailable и 422 до вызова AI больше не расходуют квоту; отсутствие AI-конфигурации по-прежнему возвращает запасной план с 200, теперь без попытки.
 - AI-этап: добавлены `CatalogUnavailableErrorSchema` / `CatalogUnavailableResponseSchema` и выведенные типы для HTTP 503 `catalog_unavailable`; добавлены `AiUnavailableErrorSchema` / `AiUnavailableResponseSchema` и типы для HTTP 503 `ai_unavailable`. Общие error-union расширены. Первый код доступен plan/generate, второй — nutrition/analyze.
 - В plan/generate добавлен существующий HTTP 402 `pro_required` для Free-квоты. Незавершённая анкета сохраняет 422 `validation_error`, Pro-квота — 429 `rate_limited`. Формы успешных ответов не изменены, обязательные поля не добавлены.
 - Добавлены `GymNotFoundErrorSchema`, `GymNotFoundResponseSchema`, их выведенные типы и сообщение `The gym was not found.`: HTTP 404 `gym_not_found` в общих ошибках и QR-маршруте.
 - В ошибки QR-маршрута добавлен существующий HTTP 429 `rate_limited`.
 - По прямому указанию пользователя QR-маршрут не требует сессии, но требует `x-gym-key`; Bearer JWT добавлен как запасной способ авторизации остальных маршрутов.
-- Неизвестный зал и неверный/просроченный токен check-in сохраняют существующий HTTP 422 `validation_error`. Нового кода для токена нет.
+- Неизвестный зал check-in сохраняет HTTP 422 `validation_error`. Неверный/просроченный токен теперь даёт HTTP 422 `invalid_qr_token` по прямому заданию пользователя.
 - Схемы запросов и успешных ответов не изменены. Новые границы нагрузок проверяются как бизнес-правила по явному заданию пользователя, без изменения типов Zod-контракта.
-- Ранее согласованный HTTP 500 `internal_error` с точным сообщением `An unexpected error occurred.` остаётся во всех 13 схемах ошибок. Поля nutrition `confidence` и `disclaimer` сохранены.
+- Ранее согласованный HTTP 500 `internal_error` с точным сообщением `An unexpected error occurred.` остаётся во всех 14 схемах ошибок. Поля nutrition `confidence` и `disclaimer` сохранены.
 
 ## Зависимости и окружение
 
@@ -52,12 +53,15 @@
 | AI_API_KEY | Только сервер: ключ AI-провайдера, без NEXT_PUBLIC-варианта |
 | AI_BASE_URL | Только сервер: базовый URL API, к которому добавляется /chat/completions |
 | AI_MODEL | Только сервер: имя модели в запросе |
+| DEMO_EMAIL | Только seed-demo: адрес основного демо-аккаунта |
+| DEMO_PASSWORD | Только seed-demo: пароль создаваемых демо-аккаунтов |
+| DEMO2_EMAIL | Только seed-demo: адрес второго аккаунта без анкеты |
 
 Для работы нужны URL, anon key, service role и GYM_ADMIN_KEY. Значения секретов не должны попадать в Git, ответы или логи. У service role и gym key нет вариантов NEXT_PUBLIC. `TEST_DATABASE_URL` и `TEST_DATABASE_DISPOSABLE=1` нужны только существующему SQL runner; native-runner сам задаёт их для изолированной локальной БД. Seed и live PostgREST smoke используют серверные SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY по своей документации; видео-валидатор ключей не требует.
 
 Для вызова модели нужны все три AI-переменные; отсутствие конфигурации приводит к запасному плану при достаточном каталоге и к 503 ai_unavailable у nutrition. Секреты не логируются, публичные AI-переменные игнорируются.
 
-Для переноса `.ts` импортов нужны `allowImportingTsExtensions: true`, `noEmit: true`, DOM-типы для контрактного `File`, Next.js App Router. Применяются все пять миграций в порядке имени; первые четыре не переписаны. Новых зависимостей для AI нет: используются fetch, node:http в тестах и существующий Zod 4.
+Для переноса `.ts` импортов нужны `allowImportingTsExtensions: true`, `noEmit: true`, DOM-типы для контрактного `File`, Next.js App Router. Применяются все семь миграций в порядке имени; уже применённые 001–005 не переписаны. Новых зависимостей для AI нет: используются fetch, node:http в тестах и существующий Zod 4.
 
 ## Авторизация и ошибки
 
@@ -84,7 +88,7 @@ Streak использует существующий алгоритм и timezon
 
 Demo rate limit: QR 60 запросов/IP/минуту и 300/ключ/минуту; check-in 10/пользователь/минуту. Счётчики процесса ограничены 10000 ключами, ключи/IP хешируются. В serverless/нескольких процессах лимит НЕ общий, при перезапуске сбрасывается. Reverse proxy должен перезаписывать x-forwarded-for/x-real-ip: без этого клиент может подделать IP. Без заголовков используется общий unknown bucket.
 
-Пока не реализованы redeem API, billing, partner/stats и UI входа. Существующая SQL-функция redeem сохранена, новых возможностей этого API не добавлялось. Главная страница временного каркаса — заглушка.
+Redeem, billing, partner/stats и partner/simulate-purchase реализованы. UI входа и главная страница временного каркаса остаются вне backend-задачи.
 
 ## AI-план и nutrition
 
@@ -153,12 +157,12 @@ commit;
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm exec next build --webpack
-pnpm exec tsc --noEmit --incremental false
-node --test
-node --conditions=react-server --test lib/server/http.test.ts lib/server/activity.test.ts
-node --conditions=react-server --test lib/server/ai-nutrition.test.ts lib/server/plans.test.ts
-node scripts/verification/native-runner.mjs
+node --use-system-ca node_modules/next/dist/bin/next build --webpack
+node --use-system-ca node_modules/typescript/bin/tsc --noEmit --incremental false
+node --use-system-ca --test
+node --use-system-ca --conditions=react-server --test lib/server/http.test.ts lib/server/activity.test.ts
+node --use-system-ca --conditions=react-server --test lib/server/ai-nutrition.test.ts lib/server/plans.test.ts
+node --use-system-ca scripts/verification/native-runner.mjs
 ```
 
 Native runner использует существующие assertions.sql и concurrency.mjs: отдельные реальные PostgreSQL-соединения проверяют конкуренцию check-in и тренировок. БД локальная и одноразовая; Supabase Auth/PostgREST не заменяются утверждением о production end-to-end. Проверки HTTP-обработчиков в Node используют подставные HTTP-ответы Supabase; HMAC, схема и обработчик исполняются настоящие. Новых файлов инфраструктуры проверки нет.
@@ -190,7 +194,7 @@ $session | curl.exe -i -H "Authorization: Bearer $env:TEST_USER_JWT" -H 'Content
 $session | curl.exe -i -H "Authorization: Bearer $env:TEST_USER_JWT" -H 'Content-Type: application/json' -X POST http://127.0.0.1:3100/api/sessions --data-binary '@-'
 ```
 
-TEST_EXERCISE_SLUG должен принадлежать первому дню указанного плана. Check-in возвращает 200/+40 и затем 409; новый день тренировок даёт 10 (или 60 при завершении недели), повтор — 0, но создаёт ещё workout_session. Live PostgREST smoke после всех миграций: `node scripts/postgrest-smoke.mjs`. Создание планов для demo остаётся отдельной задачей, поскольку plan/generate не входит в эту поставку.
+TEST_EXERCISE_SLUG должен принадлежать первому дню указанного плана. Check-in возвращает 200/+40 и затем 409; новый день тренировок даёт 10 (или 60 при завершении недели), повтор — 0, но создаёт ещё workout_session. Live PostgREST smoke после всех миграций: `node --use-system-ca scripts/postgrest-smoke.mjs`. Создание планов для demo остаётся отдельной задачей, поскольку plan/generate не входит в эту поставку.
 
 Проверка RPC-прав и индексов в SQL Editor:
 
@@ -208,10 +212,10 @@ where n.nspname='public' and proname in ('record_gym_checkin', 'record_workout_s
 
 ## Проверки предыдущего этапа (QR и тренировки)
 
-- `pnpm exec next build --webpack`: код 0, `Compiled successfully in 6.2s`; все семь API-маршрутов — dynamic. Первый sandbox-запуск остановился на EPERM при создании каталога `.next`; повтор с разрешением записи прошёл.
-- `pnpm exec tsc --noEmit --incremental false`: код 0, вывод пустой.
-- `node --test`: тогда сообщил 34 pass, но позднее обнаружено, что унаследованный NODE_TEST_CONTEXT мог пропускать дочерние тесты. Прямые прогоны http.test.ts и activity.test.ts с `--conditions=react-server` действительно прошли: по 8 тестов. На текущем AI-этапе все обёртки исправлены и перепроверены, как описано ниже.
-- `node scripts/verification/native-runner.mjs`: код 0, `PASS: native PostgreSQL verification completed.` Проверены все три миграции, права, откаты, полночь зала, чужой план, недельный бонус и реальная конкуренция. Первый запуск встретил EACCES на loopback; следующий выявил устаревшие права временных SQL test helpers после миграции 002. Явные grants helpers исправлены, финальный полный прогон прошёл. Существующий runner и PostgreSQL остановлены штатно.
+- `node --use-system-ca node_modules/next/dist/bin/next build --webpack`: код 0, `Compiled successfully in 6.2s`; все семь API-маршрутов — dynamic. Первый sandbox-запуск остановился на EPERM при создании каталога `.next`; повтор с разрешением записи прошёл.
+- `node --use-system-ca node_modules/typescript/bin/tsc --noEmit --incremental false`: код 0, вывод пустой.
+- `node --use-system-ca --test`: тогда сообщил 34 pass, но позднее обнаружено, что унаследованный NODE_TEST_CONTEXT мог пропускать дочерние тесты. Прямые прогоны http.test.ts и activity.test.ts с `--conditions=react-server` действительно прошли: по 8 тестов. На текущем AI-этапе все обёртки исправлены и перепроверены, как описано ниже.
+- `node --use-system-ca scripts/verification/native-runner.mjs`: код 0, `PASS: native PostgreSQL verification completed.` Проверены все три миграции, права, откаты, полночь зала, чужой план, недельный бонус и реальная конкуренция. Первый запуск встретил EACCES на loopback; следующий выявил устаревшие права временных SQL test helpers после миграции 002. Явные grants helpers исправлены, финальный полный прогон прошёл. Существующий runner и PostgreSQL остановлены штатно.
 - Сверка контракта через Node: `PASS: draft exactly matches 17 proposal blocks; all 13 endpoint errors retain internal_error.`
 - Реальный dev-сервер на 127.0.0.1:3100 с временным демонстрационным GYM_ADMIN_KEY: curl без ключа и с неверным ключом — HTTP 401 `invalid_gym_key`; с правильным временным ключом — HTTP 500 `internal_error`, поскольку Supabase не настроен. Серверный лог: `SERVER CONFIGURATION ERROR: Missing server configuration: SUPABASE_SERVICE_ROLE_KEY.` Клиенту возвращено только `An unexpected error occurred.` Dev-сервер остановлен.
 
@@ -232,9 +236,9 @@ where n.nspname='public' and proname in ('record_gym_checkin', 'record_workout_s
 ## Повторная проверка AI и сохранности SQL-тестов
 
 ```powershell
-node --test
-node --conditions=react-server --test lib/server/plans.test.ts lib/server/ai-nutrition.test.ts
-node scripts/verification/native-runner.mjs
+node --use-system-ca --test
+node --use-system-ca --conditions=react-server --test lib/server/plans.test.ts lib/server/ai-nutrition.test.ts
+node --use-system-ca scripts/verification/native-runner.mjs
 git diff --numstat a117387 -- scripts/verification/assertions.sql
 @'
 import assert from 'node:assert/strict';
@@ -244,7 +248,7 @@ const old = execFileSync('git', ['show', 'a117387:scripts/verification/assertion
 const current = readFileSync('scripts/verification/assertions.sql','utf8').replace(/\r\n/g,'\n');
 assert.ok(current.startsWith(old));
 console.log('PASS: every original SQL assertion remains unchanged.');
-'@ | node --input-type=module
+'@ | node --use-system-ca --input-type=module
 ```
 
 Команды ниже требуют реальных настроенных сервисов, проверенного каталога, пользовательского JWT и локального изображения. Они здесь **не запускались**:
@@ -253,4 +257,93 @@ console.log('PASS: every original SQL assertion remains unchanged.');
 curl.exe -i -X POST http://127.0.0.1:3100/api/plan/generate -H "Authorization: Bearer $env:TEST_USER_JWT" -H 'Content-Type: application/json' --data '{}'
 curl.exe -i http://127.0.0.1:3100/api/plan/active -H "Authorization: Bearer $env:TEST_USER_JWT"
 curl.exe -i -X POST http://127.0.0.1:3100/api/nutrition/analyze -H "Authorization: Bearer $env:TEST_USER_JWT" -F "image=@$env:TEST_IMAGE_PATH"
+```
+
+
+## Commerce и демо: новые миграции 006–007
+
+Применять вручную в Supabase SQL Editor по одному файлу: сначала supabase/migrations/202611140006_commerce.sql, затем supabase/migrations/202611140007_demo_seed.sql. Уже применённые 001–005 не редактировались. Новые файлы самодостаточны поверх предыдущих миграций, без psql-команд; используют CREATE OR REPLACE / IF NOT EXISTS, явно закрывают EXECUTE для PUBLIC/anon/authenticated и выдают service_role. Последняя команда каждого файла — NOTIFY pgrst, 'reload schema';. Новых таблиц нет.
+
+Миграция 005 уже сохранена в коммите f56186a: она добавляет save_fallback_plan. Функция в одной транзакции под блокировкой профиля сохраняет запасной план, меняет активную версию и выдаёт первые +20 один раз. Попытку генерации она не создаёт. Это соответствует квоте: отсутствие AI-конфигурации приводит к fallback без AI и без попытки; если AI был вызван и затем потребовался fallback, используется save_generated_plan с уже зарезервированной попыткой. Ошибки анкеты, тела запроса и каталога происходят до резервирования. Миграция 007 использует тот же путь без AI для демо-данных.
+
+### Новые маршруты
+
+- POST /api/rewards/redeem: withAuth, строгий reward_id, один вызов трёхаргументного redeem_reward. Отсутствующая награда — 404 reward_not_found, неактивная — 409 reward_inactive, нехватка — 402 not_enough_coins с проверенным положительным целым N из SQL DETAIL. Никакой повторной логики списания в маршруте нет. Pro продлевается от максимума текущего конца и времени операции, source=coin_redemption. Node crypto.randomBytes создаёт 32 кандидата SHOWUP-XXXXXX без 0/O/1/I; SQL перебирает коллизии под уникальным индексом в той же транзакции. Исчерпание всего пула откатывает операцию и даёт безопасный 500.
+- POST /api/billing/subscribe: принимает прежний контракт {plan:"pro_monthly"}. mock_subscribe под блокировкой возвращает существующий активный срок без продления; иначе создаёт 30 дней с source=mock_payment. Реального платёжного провайдера нет.
+- POST /api/partner/simulate-purchase: принимает {redemption_id}; чужой/неизвестный — 404, награда другого вида — 422, повтор — 409 already_purchased. Корзина ECONOMY.demoPurchaseAmountCents=4000; сумма не берётся от клиента. Комиссия округляется вниз до целого цента: точное numeric в SQL и целочисленная арифметика в calculateCommissionCents. Индекс partner_sales_redemption_once запрещает вторую продажу одной награды.
+- GET /api/partner/stats?partner_id=: доступен любой авторизованной сессии для демо. Невалидный UUID/лишние query-поля — 422, неизвестный партнёр — 404, пустая статистика — три нуля. Агрегация выполняется одним серверным RPC.
+
+Существующая двухаргументная redeem_reward сохранена для совместимости прежних SQL-проверок и service-role клиентов: у неё историческое source='coins' и прежний формат промокода. Новый HTTP API всегда передаёт третий аргумент p_promo_codes и использует правила 006. Старый API не открыт клиентским ролям. Это намеренное ограничение совместимости, а не подмена проверки новой реализации.
+
+coin_balance остаётся SECURITY INVOKER с RLS; authenticated может передать произвольный UUID, но видит только собственные ledger-строки. Для чужого UUID возвращается 0 независимо от реального баланса. Добавлены SQL-проверки с положительными разными балансами A/B и пять live smoke-кейсов (service role, собственные и чужие балансы). /api/me продолжает использовать прежний RPC. Оснований менять его grants не найдено.
+
+### Демо-аккаунты
+
+scripts/seed-demo.mjs сначала читает проверенный каталог и зал America/Chicago. Требуется минимум пять подходящих упражнений и минимум две мышечные группы; verified=true, заполненные video_youtube_id/video_title остаются обязательными. При недостатке каталога нет Auth-мутаций. --dry-run не делает сетевых запросов, даже без env.
+
+Основной аккаунт получает расписание [1,3,5], 45 минут, full_gym, отсутствие травм, America/Chicago и план из того же fallbackPlan. seed_demo_account в 007 атомарно записывает профиль, план, три посещения и три тренировки за предыдущую ISO-неделю через обычные reward RPC. Для нового аккаунта это 20 + 3×40 + 3×10 + 50 = 220 коинов, восемь ledger-строк. Стабильный UUID плана зависит от пользователя и версии seed; повтор, даже через неделю, не создаёт новых строк и не переактивирует старый план.
+
+Второй аккаунт остаётся без анкеты. Для обоих вновь созданных аккаунтов используется DEMO_PASSWORD; существующие пароли не меняются. Если у существующего второго аккаунта уже есть анкета, seed прекращается до записи. При ошибке RPC удаляются только аккаунты, созданные текущим запуском. Auth и SQL не составляют одну общую транзакцию: при сбое cleanup выводится безопасное сообщение и требуется проверить Auth вручную. Адреса и пароли не логируются.
+
+### Команды текущего этапа
+
+Все команды Node используют --use-system-ca. Они не отключают TLS-проверку. Если aliases нужны скрипту, создавайте их только в окружении процесса; не записывайте ключи в новые файлы.
+
+```powershell
+node --use-system-ca node_modules/next/dist/bin/next build --webpack
+node --use-system-ca node_modules/typescript/bin/tsc --noEmit --incremental false
+node --use-system-ca --test
+node --use-system-ca scripts/verification/native-runner.mjs
+node --use-system-ca scripts/seed-demo.mjs --dry-run
+node --use-system-ca --conditions=react-server --test --test-reporter=tap lib/server/commerce.test.ts scripts/seed-demo.test.mjs
+node --use-system-ca --env-file=.env.local --input-type=module -e "process.env.SUPABASE_URL=process.env.NEXT_PUBLIC_SUPABASE_URL; process.env.SUPABASE_ANON_KEY=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; await import('./scripts/postgrest-smoke.mjs')"
+```
+
+Последняя команда — живой smoke с созданием и удалением тестовых аккаунтов; на этом этапе она не запускалась. Новые миграции не применялись к вашему Supabase автоматически, AI не вызывался. Миграции проверяются локальным native PostgreSQL, HTTP и seed-demo — фейковыми серверами. Существующий SQL сброса попыток у одного демо-пользователя приведён выше и не сбрасывает ledger.
+
+
+## Безопасная проверка секретов
+
+Следующая команда проверяет все достижимые Git blobs и отслеживаемые/неигнорируемые файлы рабочего дерева на точные непустые значения из .env.local, включая повторные определения переменных. Она печатает только имя переменной и место совпадения, без значений. Локальный env, зависимости и игнорируемые build/cache-артефакты исключены из поиска рабочего дерева; это не обещание аудита всех локальных файлов на компьютере. История проверяется целиком по всем refs; автоматически не переписывается.
+
+```powershell
+@'
+import {readFileSync} from 'node:fs';
+import {parseEnv} from 'node:util';
+import {execFileSync} from 'node:child_process';
+try {
+  const git = args => execFileSync('git', args, {maxBuffer:64*1024*1024,stdio:['pipe','pipe','pipe']});
+  const source = readFileSync('.env.local','utf8');
+  const values = new Map();
+  for (const part of [source, ...source.split(/\r?\n/)]) {
+    for (const [name,value] of Object.entries(parseEnv(part))) {
+      if (value) values.set(name+'\0'+value, {name,bytes:Buffer.from(value)});
+    }
+  }
+  const needles = [...values.values()];
+  const files = [...new Set(git(['ls-files','-co','--exclude-standard','-z']).toString().split('\0').filter(Boolean))];
+  const findings = [];
+  for (const path of files) {
+    const bytes = readFileSync(path);
+    for (const item of needles) if (bytes.includes(item.bytes)) findings.push({scope:'worktree',path,variable:item.name});
+  }
+  const ids = git(['rev-list','--objects','--all']).toString().trim().split('\n').map(line=>line.split(' ')[0]);
+  const metadata = execFileSync('git',['cat-file','--batch-check=%(objectname) %(objecttype)'],{
+    input:ids.join('\n')+'\n',encoding:'utf8',maxBuffer:64*1024*1024,stdio:['pipe','pipe','pipe']
+  });
+  const blobs = metadata.trim().split('\n').filter(line=>line.endsWith(' blob')).map(line=>line.split(' ')[0]);
+  for (const object of blobs) {
+    const bytes = git(['cat-file','blob',object]);
+    for (const item of needles) if (bytes.includes(item.bytes)) findings.push({scope:'history',object,variable:item.name});
+  }
+  const historicalEnvFiles = [...new Set(git(['log','--all','--pretty=format:','--name-only']).toString().split('\n')
+    .filter(path=>/(^|\/)\.env(?:\.|$)/.test(path)))];
+  console.log(JSON.stringify({worktree_files:files.length,history_blobs:blobs.length,
+    checked_variables:[...new Set(needles.map(item=>item.name))],findings,historical_env_files:historicalEnvFiles}));
+  process.exitCode = findings.length || historicalEnvFiles.length ? 1 : 0;
+} catch {console.log('FAIL: secret audit could not complete; details suppressed.');process.exitCode=1;}
+'@ | node --use-system-ca --env-file=.env.local --input-type=module
+git check-ignore .env.local scripts/verification/node_modules
+git ls-files -- scripts/verification/node_modules
+git log --all --format='%h %s' --grep='throwaway scaffold'
 ```

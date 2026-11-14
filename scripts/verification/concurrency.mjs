@@ -159,6 +159,33 @@ try {
   });
   console.log('PASS: final balance is zero, with exactly one debit, one redemption and one Pro subscription.');
 
+  // Exercise the overload used by HTTP independently of the legacy RPC above.
+  await coordinator.query(`
+    INSERT INTO public.coin_ledger(user_id, amount, reason, ref_id)
+    VALUES ($1, 100, 'commerce_concurrency_credit', $2)
+  `, [userId, randomUUID()]);
+  const commerceRedeemed = await runContended('SELECT public.redeem_reward($1, $2, $3::text[]) AS result',
+    [userId, rewardId, []], 'HTTP redemption overload');
+  assert.equal(commerceRedeemed.first.balance, 0);
+  assert.equal(commerceRedeemed.second.error?.code, 'P0001');
+  assert.equal(commerceRedeemed.second.error?.message, 'not_enough_coins');
+  assert.equal(commerceRedeemed.second.error?.detail, '100');
+  const commerceFinal = await coordinator.query(`
+    SELECT public.coin_balance($1) AS balance,
+           (SELECT count(*)::integer FROM public.coin_ledger WHERE user_id = $1 AND amount < 0) AS debits,
+           (SELECT count(*)::integer FROM public.redemptions WHERE user_id = $1) AS redemptions,
+           (SELECT source FROM public.subscriptions WHERE user_id = $1) AS source
+  `, [userId]);
+  assert.deepEqual(commerceFinal.rows[0], {balance: '0', debits: 2, redemptions: 2, source: 'coin_redemption'});
+  console.log('PASS: concurrent HTTP redemptions issue exactly one new debit and redemption; the loser receives an exact shortfall.');
+
+  const existingProEnd = (await coordinator.query('SELECT current_period_end FROM public.subscriptions WHERE user_id=$1', [userId])).rows[0].current_period_end;
+  const subscribed = await runContended('SELECT public.mock_subscribe($1) AS result', [userId], 'mock subscribe');
+  assert.equal(subscribed.second.error, undefined);
+  assert.equal(new Date(subscribed.first.pro_until).getTime(), existingProEnd.getTime());
+  assert.deepEqual(subscribed.second.result.rows[0].result, subscribed.first);
+  console.log('PASS: concurrent mock subscription clicks both return the existing expiry without extension.');
+
   const checkins = await runContended('SELECT public.record_gym_checkin($1, $2, $3) AS result',
     [userId, gymId, '2026-11-16T15:00:00Z'], 'check-in');
   assert.deepEqual(checkins.first, { coins_earned: 40, balance: 40 });

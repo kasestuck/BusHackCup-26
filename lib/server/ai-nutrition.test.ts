@@ -11,7 +11,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     // An inherited test context makes Node skip a recursively invoked runner.
     delete environment.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [
-      "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
+      "--use-system-ca", "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
     ], { env: environment, encoding: "utf8", timeout: 40_000, windowsHide: true });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
