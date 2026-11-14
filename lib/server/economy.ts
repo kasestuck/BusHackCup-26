@@ -17,6 +17,19 @@ export const ECONOMY = Object.freeze({
   }),
   xp: Object.freeze({ perSet: 5, maxPerSession: 100 }),
   planLimits: Object.freeze({ freePerWeek: 1, proPerDay: 10 }),
+  planFallback: Object.freeze({ sets: 2, reps: "8-10", restSeconds: 60 }),
+  planExerciseCounts: Object.freeze({
+    20: Object.freeze({ min: 3, max: 4 }),
+    30: Object.freeze({ min: 4, max: 5 }),
+    45: Object.freeze({ min: 5, max: 6 }),
+    60: Object.freeze({ min: 6, max: 8 }),
+    75: Object.freeze({ min: 7, max: 9 }),
+  }),
+  ai: Object.freeze({
+    timeoutMs: 25_000,
+    imageMaxBytes: 5 * 1024 * 1024,
+    nutritionTotalsTolerance: 0.01,
+  }),
   sessionLimits: Object.freeze({
     maxExercises: 20,
     maxSetsPerExercise: 10,
@@ -30,6 +43,7 @@ export const ECONOMY = Object.freeze({
     qrPerIp: 60,
     qrPerKey: 300,
     checkinPerUser: 10,
+    nutritionPerUser: 10,
     maxEntries: 10_000,
   }),
   partnerCommissionPct: 15,

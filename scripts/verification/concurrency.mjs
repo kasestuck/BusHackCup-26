@@ -30,6 +30,7 @@ const creditId = randomUUID();
 const partnerId = randomUUID();
 const gymId = randomUUID();
 const planId = randomUUID();
+const quotaUserId = randomUUID();
 let coordinator;
 let first;
 let second;
@@ -110,6 +111,7 @@ try {
   // Fixtures must be committed before both independent sessions can see them.
   await coordinator.query('BEGIN');
   await coordinator.query('INSERT INTO auth.users (id) VALUES ($1)', [userId]);
+  await coordinator.query('INSERT INTO auth.users (id) VALUES ($1)', [quotaUserId]);
   await coordinator.query('UPDATE public.profiles SET display_name = $2, timezone = $3, weekdays = ARRAY[1,3] WHERE id = $1',
     [userId, 'Concurrency verification', 'America/New_York']);
   await coordinator.query(`
@@ -183,6 +185,17 @@ try {
   `, [userId]);
   assert.deepEqual(trained.rows[0], { sessions: 2, rewards: 1, balance: '50' });
   console.log('PASS: concurrent workouts both persist with XP, but exactly one +10 daily reward is issued.');
+
+  const reservations = await runContended('SELECT public.reserve_plan_generation($1) AS result',
+    [quotaUserId], 'Free generation quota');
+  assert.match(reservations.first, /^[0-9a-f-]{36}$/);
+  assert.equal(reservations.second.error?.code, 'P0001');
+  assert.equal(reservations.second.error?.message, 'pro_required');
+  const attempts = await coordinator.query(`
+    SELECT count(*)::integer AS attempts FROM app_private.plan_generation_attempts WHERE user_id = $1
+  `, [quotaUserId]);
+  assert.equal(attempts.rows[0].attempts, 1);
+  console.log('PASS: concurrent Free generation requests reserve exactly one attempt; the loser receives pro_required.');
 } catch (error) {
   failure = error;
 } finally {
@@ -197,6 +210,7 @@ try {
         await coordinator.query('BEGIN');
         // The profile FK cascades only rows belonging to this random test user.
         await coordinator.query('DELETE FROM auth.users WHERE id = $1', [userId]);
+        await coordinator.query('DELETE FROM auth.users WHERE id = $1', [quotaUserId]);
         await coordinator.query('DELETE FROM public.rewards WHERE id = $1', [rewardId]);
         await coordinator.query('DELETE FROM public.gyms WHERE id = $1', [gymId]);
         await coordinator.query('DELETE FROM public.partners WHERE id = $1', [partnerId]);
