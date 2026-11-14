@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
-import { ComingNext } from "@/components/shell/coming-next";
-import { IconCalendar } from "@/components/ui/icons";
+import { Suspense } from "react";
+import { Frame, PlanView } from "@/components/plan/plan-view";
+import { PlanSkeleton } from "@/components/plan/plan-skeleton";
 
 export const metadata: Metadata = { title: "My Plan" };
 
-export default function Page() {
+export default function PlanPage() {
+  // PlanView reads ?day= via useSearchParams, which needs a Suspense boundary.
   return (
-    <ComingNext
-      title="My Plan"
-      icon={<IconCalendar />}
-      description="Week calendar, exercise cards with technique videos and the workout log land here next. Your schedule is already on the dashboard."
-    />
+    <Suspense
+      fallback={
+        <Frame>
+          <PlanSkeleton />
+        </Frame>
+      }
+    >
+      <PlanView />
+    </Suspense>
   );
 }
