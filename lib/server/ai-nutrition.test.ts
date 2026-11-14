@@ -15,8 +15,8 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     ], { env: environment, encoding: "utf8", timeout: 40_000, windowsHide: true });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /# tests 9\r?\n/);
-    assert.match(result.stdout, /# pass 9\r?\n/);
+    assert.match(result.stdout, /# tests 10\r?\n/);
+    assert.match(result.stdout, /# pass 10\r?\n/);
     assert.match(result.stdout, /# fail 0\r?\n/);
     assert.doesNotMatch(result.stderr, /recursively|skipping running files/);
   });
@@ -191,14 +191,28 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     });
   });
 
-  test("nutrition rejects files larger than five MiB before the AI call", async () => {
+  test("nutrition rejects a four MiB plus one byte image before the AI call", async () => {
     await fakeServices({}, async ({ aiRequests, foodWrites }) => {
-      const bytes = new Uint8Array(ECONOMY.ai.imageMaxBytes + 1);
+      assert.equal(ECONOMY.ai.imageMaxBytes, 4 * 1024 * 1024);
+      const bytes = new Uint8Array(4 * 1024 * 1024 + 1);
       bytes.set([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]);
       const response = await analyze(upload(bytes));
       assert.equal(response.status, 422);
       assert.equal(aiRequests.length, 0);
       assert.equal(foodWrites.length, 0);
+    });
+  });
+
+  test("nutrition accepts an image at the exact four MiB size limit", async () => {
+    await fakeServices({}, async ({ aiRequests, foodWrites }) => {
+      assert.equal(ECONOMY.ai.imageMaxBytes, 4 * 1024 * 1024);
+      const bytes = new Uint8Array(4 * 1024 * 1024);
+      bytes.set([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]);
+      const response = await analyze(upload(bytes));
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), validResult);
+      assert.equal(aiRequests.length, 1);
+      assert.equal(foodWrites.length, 1);
     });
   });
 

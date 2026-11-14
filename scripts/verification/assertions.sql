@@ -680,3 +680,145 @@ select pg_temp.expect_error($query$select public.save_generated_plan('e1111111-1
     '42501', null, 'authenticated cannot persist plans through the server RPC');
 reset role;
 rollback;
+
+-- Migration 005 additions. Every preceding assertion is preserved verbatim.
+begin;
+create function pg_temp.assert_true(p_condition boolean, p_label text)
+returns void language plpgsql as $$
+begin
+    if p_condition is distinct from true then raise exception 'FAIL: %', p_label; end if;
+    raise notice 'PASS: %', p_label;
+end;
+$$;
+create function pg_temp.expect_error(p_sql text, p_state text, p_message text, p_label text)
+returns void language plpgsql as $$
+declare v_state text; v_message text;
+begin
+    begin execute p_sql;
+    exception when others then get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    end;
+    perform pg_temp.assert_true(v_state = p_state and (p_message is null or v_message = p_message), p_label);
+end;
+$$;
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
+select pg_temp.assert_true(
+    not has_function_privilege('anon', 'public.save_fallback_plan(uuid,jsonb,jsonb)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.save_fallback_plan(uuid,jsonb,jsonb)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.save_fallback_plan(uuid,jsonb,jsonb)', 'EXECUTE')
+    and not exists (
+        select 1 from pg_proc p, lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+        where p.oid = 'public.save_fallback_plan(uuid,jsonb,jsonb)'::regprocedure
+          and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+    ), 'unmetered fallback persistence executes only for service role');
+select pg_temp.assert_true((
+    select not prosecdef and 'search_path=""' = any(proconfig)
+    from pg_proc where oid = 'public.save_fallback_plan(uuid,jsonb,jsonb)'::regprocedure
+), 'fallback persistence is an invoker function with an empty search_path');
+
+insert into auth.users(id) values
+('a5111111-1111-4111-8111-111111111111'),
+('a5222222-2222-4222-8222-222222222222'),
+('a5333333-3333-4333-8333-333333333333');
+set local role service_role;
+do $$
+declare
+    v_user uuid := 'a5111111-1111-4111-8111-111111111111';
+    v_other uuid := 'a5222222-2222-4222-8222-222222222222';
+    v_plan1 jsonb := '{"id":"b5111111-1111-4111-8111-111111111111","days":[{"weekday":1}]}';
+    v_plan2 jsonb := '{"id":"b5222222-2222-4222-8222-222222222222","days":[{"weekday":3}]}';
+    v_snapshot jsonb := '{"age":30,"weekdays":[1,3]}';
+    v_result jsonb;
+begin
+    v_result := public.save_fallback_plan(v_user, v_plan1, v_snapshot);
+    perform pg_temp.assert_true(v_result = jsonb_build_object('plan', v_plan1)
+        and (select active and input_snapshot = v_snapshot from public.workout_plans where id = (v_plan1 ->> 'id')::uuid)
+        and not exists (select 1 from app_private.plan_generation_attempts where user_id = v_user),
+        'fallback persists the plan and input snapshot without consuming a generation attempt');
+    perform pg_temp.assert_true(public.coin_balance(v_user) = 20,
+        'the first unmetered fallback awards twenty coins');
+    v_result := public.save_fallback_plan(v_user, v_plan1, v_snapshot);
+    perform pg_temp.assert_true(v_result = jsonb_build_object('plan', v_plan1)
+        and (select count(*) = 1 from public.workout_plans where user_id = v_user)
+        and public.coin_balance(v_user) = 20,
+        'replaying a fallback plan ID is idempotent');
+    v_result := public.save_fallback_plan(v_user, v_plan2, v_snapshot);
+    perform pg_temp.assert_true((select count(*) = 2 from public.workout_plans where user_id = v_user)
+        and (select count(*) = 1 from public.workout_plans where user_id = v_user and active)
+        and (select active from public.workout_plans where id = (v_plan2 ->> 'id')::uuid)
+        and (select count(*) = 1 from public.coin_ledger where user_id = v_user and reason = 'first_plan')
+        and public.coin_balance(v_user) = 20
+        and not exists (select 1 from app_private.plan_generation_attempts where user_id = v_user),
+        'later fallbacks keep exactly one active plan and never repeat the first-plan award');
+    v_result := public.save_fallback_plan(v_user, v_plan1, v_snapshot);
+    perform pg_temp.assert_true((select active from public.workout_plans where id = (v_plan2 ->> 'id')::uuid)
+        and not (select active from public.workout_plans where id = (v_plan1 ->> 'id')::uuid),
+        'replaying an old fallback does not reactivate it');
+    perform pg_temp.expect_error(format('select public.save_fallback_plan(%L,%L::jsonb,%L::jsonb)',
+        v_other, v_plan1, v_snapshot), 'P0001', 'validation_error',
+        'fallback persistence rejects a plan ID owned by another user');
+    perform pg_temp.assert_true(not exists (select 1 from public.workout_plans where user_id = v_other)
+        and public.coin_balance(v_other) = 0,
+        'a foreign plan ID creates no plan or coins for the caller');
+    perform pg_temp.expect_error(format('select public.save_fallback_plan(%L,%L::jsonb,%L::jsonb)',
+        v_user, v_plan1, '{}'), 'P0001', 'validation_error',
+        'reusing a fallback ID with a different snapshot is rejected');
+    perform pg_temp.expect_error(format('select public.save_fallback_plan(%L,%L::jsonb,%L::jsonb)',
+        v_user, '{"id":"invalid","days":[{}]}', '{}'), 'P0001', 'validation_error',
+        'fallback persistence validates the plan UUID');
+    perform pg_temp.expect_error(format('select public.save_fallback_plan(%L,%L::jsonb,%L::jsonb)',
+        v_user, '{"id":"b5333333-3333-4333-8333-333333333333","days":[]}', '{}'), 'P0001', 'validation_error',
+        'fallback persistence rejects an empty day list');
+    perform pg_temp.expect_error(format('select public.save_fallback_plan(%L,%L::jsonb,%L::jsonb)',
+        v_user, v_plan1, '[]'), 'P0001', 'validation_error',
+        'fallback persistence requires an object input snapshot');
+    perform pg_temp.expect_error(format('select public.save_generated_plan(%L,null,%L::jsonb,%L::jsonb)',
+        v_user, v_plan2, v_snapshot), 'P0001', 'validation_error',
+        'metered plan persistence still requires its reserved attempt');
+    perform pg_temp.assert_true((select count(*) = 2 from public.workout_plans where user_id = v_user)
+        and (select active from public.workout_plans where id = (v_plan2 ->> 'id')::uuid)
+        and public.coin_balance(v_user) = 20
+        and not exists (select 1 from app_private.plan_generation_attempts where user_id in (v_user, v_other)),
+        'rejected fallback inputs leave all plans, coins and attempts unchanged');
+end;
+$$;
+reset role;
+
+create function pg_temp.reject_fallback_credit() returns trigger language plpgsql as $$
+begin
+    if new.reason = 'first_plan' then
+        raise exception using errcode = 'P7780', message = 'Injected fallback ledger failure.';
+    end if;
+    return new;
+end;
+$$;
+create trigger verification_reject_fallback_credit before insert on public.coin_ledger
+for each row execute function pg_temp.reject_fallback_credit();
+set local role service_role;
+insert into public.workout_plans(id,user_id,input_snapshot,plan_json)
+values ('b5333333-3333-4333-8333-333333333333','a5333333-3333-4333-8333-333333333333','{}','{}');
+select pg_temp.expect_error(
+    $query$select public.save_fallback_plan('a5333333-3333-4333-8333-333333333333',
+        '{"id":"b5444444-4444-4444-8444-444444444444","days":[{"weekday":1}]}','{}')$query$,
+    'P7780', 'Injected fallback ledger failure.', 'fallback ledger errors propagate');
+select pg_temp.assert_true(
+    (select active from public.workout_plans where id = 'b5333333-3333-4333-8333-333333333333')
+    and not exists (select 1 from public.workout_plans where id = 'b5444444-4444-4444-8444-444444444444')
+    and public.coin_balance('a5333333-3333-4333-8333-333333333333') = 0
+    and not exists (select 1 from app_private.plan_generation_attempts where user_id = 'a5333333-3333-4333-8333-333333333333'),
+    'fallback failure restores the old active plan and leaves no new plan, reward or attempt');
+reset role;
+drop trigger verification_reject_fallback_credit on public.coin_ledger;
+
+set local role anon;
+select pg_temp.expect_error(
+    $query$select public.save_fallback_plan('a5111111-1111-4111-8111-111111111111','{}','{}')$query$,
+    '42501', null, 'anon cannot persist an unmetered fallback');
+reset role;
+set local role authenticated;
+select pg_temp.expect_error(
+    $query$select public.save_fallback_plan('a5111111-1111-4111-8111-111111111111','{}','{}')$query$,
+    '42501', null, 'authenticated cannot persist an unmetered fallback');
+reset role;
+rollback;

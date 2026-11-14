@@ -76,6 +76,11 @@ function configuration(): AiConfiguration {
   } catch { throw new AiError("configuration"); }
 }
 
+/** Validate readiness without exposing configuration values to callers or logs. */
+export function assertAiConfigured(): void {
+  configuration();
+}
+
 async function readEnvelope(response: Response): Promise<unknown> {
   const reader = response.body?.getReader();
   if (!reader) throw new AiError("invalid_response");
@@ -108,7 +113,7 @@ function containsSecret(value: unknown, secret: string): boolean {
 export type JsonGenerator = <T>(schema: ZodType<T>, messages: readonly AiMessage[], images?: readonly string[]) => Promise<T>;
 
 /** Injection is for local tests; production configuration is limited to the three AI environment variables. */
-export function createJsonGenerator(options: { timeoutMs?: number; fetch?: typeof fetch } = {}): JsonGenerator {
+export function createJsonGenerator(options: { timeoutMs?: number; fetch?: typeof fetch; signal?: AbortSignal } = {}): JsonGenerator {
   return async <T>(schema: ZodType<T>, messages: readonly AiMessage[], images: readonly string[] = []): Promise<T> => {
     const config = configuration();
     let adapter: ReturnType<typeof openAiCompatibleFormat<T>>;
@@ -118,7 +123,14 @@ export function createJsonGenerator(options: { timeoutMs?: number; fetch?: typeo
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new AiError("configuration");
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let abortFromParent: (() => void) | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
+      abortFromParent = () => {
+        controller.abort();
+        reject(new AiError("timeout"));
+      };
+      options.signal?.addEventListener("abort", abortFromParent, { once: true });
+      if (options.signal?.aborted) abortFromParent();
       timer = setTimeout(() => {
         controller.abort();
         reject(new AiError("timeout"));
@@ -148,6 +160,7 @@ export function createJsonGenerator(options: { timeoutMs?: number; fetch?: typeo
       throw error instanceof AiError ? error : new AiError("unavailable");
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      if (abortFromParent) options.signal?.removeEventListener("abort", abortFromParent);
     }
   };
 }

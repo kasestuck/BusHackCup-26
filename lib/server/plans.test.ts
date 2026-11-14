@@ -16,8 +16,8 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     ], { encoding: "utf8", timeout: 45_000, windowsHide: true, env: environment });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /^# tests 12$/m);
-    assert.match(result.stdout, /^# pass 12$/m);
+    assert.match(result.stdout, /^# tests 16$/m);
+    assert.match(result.stdout, /^# pass 16$/m);
     assert.match(result.stdout, /^# fail 0$/m);
     assert.doesNotMatch(result.stderr, /recursively/i);
   });
@@ -25,8 +25,9 @@ if (!process.execArgv.includes("--conditions=react-server")) {
   const { createWorkoutPlan, eligibleExercises, fallbackPlan, questionnaireFromProfile, CatalogUnavailableError } = await import("./plans.ts");
   const { createJsonGenerator } = await import("./ai.ts");
   const { QuestionnaireSchema, GeneratePlanSuccessSchema, PlanSchema } = await import("./contract.ts");
-  const { POST: generateRoute } = await import("../../app/api/plan/generate/route.ts");
+  const { POST: generateRoute, maxDuration } = await import("../../app/api/plan/generate/route.ts");
   const { GET: activeRoute } = await import("../../app/api/plan/active/route.ts");
+  const { ECONOMY } = await import("./economy.ts");
   const userId = "41000000-0000-4000-8000-000000000001";
   const serverPlanId = "42000000-0000-4000-8000-000000000001";
   const modelPlanId = "43000000-0000-4000-8000-000000000001";
@@ -53,6 +54,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
   type Scenario = {
     invalidJson?: boolean;
     delayMs?: number;
+    delaysMs?: number[];
     unknownSlug?: boolean;
     unknownUnderfill?: boolean;
     pro?: boolean;
@@ -61,7 +63,10 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     aiStatus?: number;
     incompleteDays?: boolean;
   };
-  type State = { requests: Captured[]; plans: any[]; attempts: number; origin: string; active: any | null };
+  type State = {
+    requests: Captured[]; plans: any[]; attempts: number; origin: string; active: any | null;
+    aiResponseClosures: Promise<boolean>[];
+  };
 
   function reply(response: ServerResponse, status: number, value: unknown): void {
     response.writeHead(status, { "Content-Type": "application/json" });
@@ -92,7 +97,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
   }
 
   async function withServer(context: TestContext, scenario: Scenario, run: (state: State) => Promise<void>): Promise<void> {
-    const state: State = { requests: [], plans: [], attempts: 0, origin: "", active: null };
+    const state: State = { requests: [], plans: [], attempts: 0, origin: "", active: null, aiResponseClosures: [] };
     const delayed = new Set<ReturnType<typeof setTimeout>>();
     const server = createServer((request, response) => {
       void (async () => {
@@ -101,11 +106,15 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         state.requests.push({ path: url.pathname, body, authorization: request.headers.authorization });
         if (url.pathname === "/chat/completions") {
           assert.equal(request.headers.authorization, `Bearer ${aiKey}`);
+          state.aiResponseClosures.push(new Promise<boolean>((resolve) => {
+            response.once("close", () => resolve(!response.writableFinished));
+          }));
           const send = () => reply(response, scenario.aiStatus ?? 200, scenario.aiStatus ? { error: "Unavailable" } : {
             choices: [{ message: { content: scenario.invalidJson ? "{invalid json" : JSON.stringify(modelPlan(body, scenario)) } }],
           });
-          if (scenario.delayMs) {
-            const timer = setTimeout(() => { delayed.delete(timer); send(); }, scenario.delayMs);
+          const delayMs = scenario.delaysMs?.[state.aiResponseClosures.length - 1] ?? scenario.delayMs;
+          if (delayMs) {
+            const timer = setTimeout(() => { delayed.delete(timer); send(); }, delayMs);
             delayed.add(timer);
           } else send();
           return;
@@ -139,7 +148,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
           }
           return;
         }
-        if (url.pathname === "/rest/v1/rpc/save_generated_plan") {
+        if (url.pathname === "/rest/v1/rpc/save_generated_plan" || url.pathname === "/rest/v1/rpc/save_fallback_plan") {
           assert.equal(body.p_user_id, userId);
           assert.equal(request.headers.apikey, "fake-plan-service-key");
           state.plans.push(body);
@@ -181,10 +190,13 @@ if (!process.execArgv.includes("--conditions=react-server")) {
   }
 
   test("valid AI output is saved once with server identity, catalog metadata and exact weekdays", async (context) => {
+    assert.equal(ECONOMY.ai.planRouteMaxDurationSeconds, 60);
+    assert.equal(maxDuration, ECONOMY.ai.planRouteMaxDurationSeconds);
     await withServer(context, {}, async (state) => {
       const response = await generateRoute(generateRequest());
       assert.equal(response.status, 200);
       const result = GeneratePlanSuccessSchema.parse(await response.json());
+      assert.equal(result.plan.title, "Model fixture plan");
       assert.notEqual(result.plan.id, modelPlanId);
       assert.deepEqual(result.plan.days.map((day) => day.weekday), [1, 3, 5]);
       assert.equal(state.plans.length, 1);
@@ -230,6 +242,37 @@ if (!process.execArgv.includes("--conditions=react-server")) {
       assert.equal(result.title, "Balanced Weekly Training");
       assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 1);
     });
+  });
+
+  test("one shared AI budget limits a slow validation retry to the remaining time and aborts its HTTP request", { timeout: 5000 }, async (context) => {
+    assert.equal(ECONOMY.ai.planBudgetMs, 40_000);
+    await withServer(context, { invalidJson: true, delaysMs: [650, 2400] }, async (state) => {
+      const start = performance.now();
+      const result = await createWorkoutPlan(baseQuestionnaire, catalog, {
+        id: serverPlanId, aiBudgetMs: 1000, aiTimeoutMs: 800,
+      });
+      const elapsedMs = performance.now() - start;
+      assert.equal(result.title, "Balanced Weekly Training");
+      assert.equal(state.aiResponseClosures.length, 2);
+      assert.ok(elapsedMs >= 900, `The remaining budget should be used: ${elapsedMs}ms`);
+      assert.ok(elapsedMs < 1300, `A fresh timeout on retry would exceed the shared budget: ${elapsedMs}ms`);
+      assert.equal(await state.aiResponseClosures[1], true, "The deadline must abort the in-flight retry");
+    });
+  });
+
+  test("the shared deadline also bounds a generator that ignores cancellation", async () => {
+    let calls = 0;
+    const start = performance.now();
+    const result = await createWorkoutPlan(baseQuestionnaire, catalog, {
+      aiBudgetMs: 50,
+      generate: async () => {
+        calls += 1;
+        return new Promise<never>(() => {});
+      },
+    });
+    assert.equal(result.title, "Balanced Weekly Training");
+    assert.equal(calls, 1);
+    assert.ok(performance.now() - start < 500);
   });
 
   test("an invented slug is removed only when the remaining day still meets its minimum", async (context) => {
@@ -316,14 +359,28 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     });
   });
 
-  test("insufficient verified catalog returns 503 without calling AI and still consumes its reserved attempt", async (context) => {
-    await withServer(context, { catalog: catalog.map((exercise) => ({ ...exercise, verified: false })) }, async (state) => {
-      const response = await generateRoute(generateRequest());
-      assert.equal(response.status, 503);
-      assert.equal((await response.json()).error.code, "catalog_unavailable");
+  test("an empty catalog repeatedly returns 503 without spending the Free attempt and a populated catalog succeeds", async (context) => {
+    const scenario: Scenario = { catalog: [] };
+    await withServer(context, scenario, async (state) => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await generateRoute(generateRequest());
+        assert.equal(response.status, 503);
+        assert.equal((await response.json()).error.code, "catalog_unavailable");
+        assert.equal(state.attempts, 0);
+        assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 0);
+        assert.equal(state.plans.length, 0);
+      }
+      // Populating with unverified entries still cannot spend the attempt.
+      scenario.catalog = catalog.map((exercise) => ({ ...exercise, verified: false }));
+      const unavailable = await generateRoute(generateRequest());
+      assert.equal(unavailable.status, 503);
+      assert.equal(state.attempts, 0);
+      scenario.catalog = catalog;
+      const success = await generateRoute(generateRequest());
+      assert.equal(success.status, 200);
       assert.equal(state.attempts, 1);
-      assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 0);
-      assert.equal(state.plans.length, 0);
+      assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 1);
+      assert.equal(state.plans.length, 1);
     });
     await assert.rejects(() => createWorkoutPlan(baseQuestionnaire, catalog.map((exercise) => ({ ...exercise, muscle_group: "single" }))), CatalogUnavailableError);
   });
@@ -337,6 +394,34 @@ if (!process.execArgv.includes("--conditions=react-server")) {
       const active = await activeRoute(new Request("http://app.test/api/plan/active", { headers: { Authorization: `Bearer ${token}` } }));
       assert.equal(active.status, 404);
       assert.equal((await active.json()).error.code, "plan_not_found");
+    });
+  });
+
+  test("invalid input returns 422 before reserving an attempt or calling AI", async (context) => {
+    await withServer(context, {}, async (state) => {
+      const response = await generateRoute(new Request("http://app.test/api/plan/generate", {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: "{invalid json",
+      }));
+      assert.equal(response.status, 422);
+      assert.equal((await response.json()).error.code, "validation_error");
+      assert.equal(state.attempts, 0);
+      assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 0);
+      assert.equal(state.plans.length, 0);
+    });
+  });
+
+  test("missing AI configuration does not spend a generation attempt", async (context) => {
+    await withServer(context, {}, async (state) => {
+      delete process.env.AI_API_KEY;
+      const response = await generateRoute(generateRequest());
+      assert.equal(response.status, 200);
+      const result = GeneratePlanSuccessSchema.parse(await response.json());
+      assert.equal(result.plan.title, "Balanced Weekly Training");
+      assert.equal(state.attempts, 0);
+      assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 0);
+      assert.equal(state.plans.length, 1);
+      assert.equal(state.requests.filter((request) => request.path === "/rest/v1/rpc/save_fallback_plan").length, 1);
     });
   });
 
