@@ -104,7 +104,11 @@ function Failed({ status, message, onRetry }: { status: number; message: string;
           <ButtonLink href="/login" size="lg" arrow>
             Sign in
           </ButtonLink>
-        ) : limited ? null : (
+        ) : limited ? (
+          <ButtonLink href="/pro" size="lg" arrow>
+            See Pro
+          </ButtonLink>
+        ) : (
           <Button size="lg" onClick={onRetry} icon={<IconRefresh size={18} />}>
             Try again
           </Button>

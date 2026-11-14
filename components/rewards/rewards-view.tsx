@@ -6,7 +6,8 @@ import { API_ROUTES, MeResponseSchema, RewardsResponseSchema, type Reward } from
 import { useApi } from "@/lib/client/use-api";
 import { formatNumber } from "@/lib/client/dashboard";
 import { affordability, sortRewards } from "@/lib/client/rewards";
-import { EARN_RULES } from "@/lib/client/economy";
+import { EARN_RULES, PRO_PRICE_USD } from "@/lib/client/economy";
+import { formatUsd } from "@/lib/client/checkout";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -89,6 +90,14 @@ function ProCard({
               : `${formatNumber(a.remaining)} coins to go.`}
           </p>
           <RedeemButton reward={reward} balance={balance} onRedeem={onRedeem} />
+          {!isPro && (
+            <Link
+              href="/pro"
+              className="-mb-2 block py-2 text-center text-sm text-muted transition-colors hover:text-ink"
+            >
+              Or subscribe for <span className="font-semibold text-ink">{formatUsd(PRO_PRICE_USD)}/month</span> →
+            </Link>
+          )}
         </div>
       </div>
     </Card>
