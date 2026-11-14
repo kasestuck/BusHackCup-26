@@ -8,11 +8,17 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 // node --test entry point while exercising the actual helpers in a child process.
 if (!process.execArgv.includes("--conditions=react-server")) {
   test("HTTP authentication and bearer isolation pass under the server export condition", () => {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [
-      "--conditions=react-server", "--test", fileURLToPath(import.meta.url),
-    ], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+      "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
+    ], { env, encoding: "utf8", timeout: 30_000, windowsHide: true });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /# tests 8\b/);
+    assert.match(result.stdout, /# pass 8\b/);
+    assert.match(result.stdout, /# fail 0\b/);
+    assert.doesNotMatch(result.stderr, /recursively|skipping running files/);
   });
 } else {
   const { withAuth } = await import("./http.ts");

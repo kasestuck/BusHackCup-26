@@ -486,3 +486,197 @@ begin
 end;
 $$;
 rollback;
+
+-- Migration 004 additions. Every preceding assertion is preserved verbatim.
+begin;
+create function pg_temp.assert_true(p_condition boolean, p_label text)
+returns void language plpgsql as $$
+begin
+    if p_condition is distinct from true then raise exception 'FAIL: %', p_label; end if;
+    raise notice 'PASS: %', p_label;
+end;
+$$;
+create function pg_temp.expect_error(p_sql text, p_state text, p_message text, p_label text)
+returns void language plpgsql as $$
+declare v_state text; v_message text;
+begin
+    begin execute p_sql;
+    exception when others then get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    end;
+    perform pg_temp.assert_true(v_state = p_state and (p_message is null or v_message = p_message), p_label);
+end;
+$$;
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
+select pg_temp.assert_true((
+    select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'app_private' and c.relname = 'plan_generation_attempts'
+), 'internal generation attempts have RLS enabled');
+select pg_temp.assert_true(
+    not has_schema_privilege('anon', 'app_private', 'USAGE')
+    and not has_schema_privilege('authenticated', 'app_private', 'USAGE')
+    and not has_table_privilege('anon', 'app_private.plan_generation_attempts', 'SELECT,INSERT,UPDATE,DELETE')
+    and not has_table_privilege('authenticated', 'app_private.plan_generation_attempts', 'SELECT,INSERT,UPDATE,DELETE'),
+    'internal generation attempts are inaccessible to client roles');
+select pg_temp.assert_true(
+    not has_function_privilege('anon', 'public.reserve_plan_generation(uuid,timestamptz)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.reserve_plan_generation(uuid,timestamptz)', 'EXECUTE')
+    and not has_function_privilege('anon', 'public.save_generated_plan(uuid,uuid,jsonb,jsonb)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.save_generated_plan(uuid,uuid,jsonb,jsonb)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.reserve_plan_generation(uuid,timestamptz)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.save_generated_plan(uuid,uuid,jsonb,jsonb)', 'EXECUTE'),
+    'generation reservation and plan persistence execute only for service role');
+select pg_temp.assert_true((
+    select bool_and(not p.prosecdef and 'search_path=""' = any(p.proconfig))
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname in ('reserve_plan_generation','save_generated_plan')
+), 'generation functions are invoker functions with an empty search_path');
+select pg_temp.assert_true((
+    select is_nullable = 'YES' from information_schema.columns
+    where table_schema = 'public' and table_name = 'food_logs' and column_name = 'image_path'
+), 'food logs permit a result without retaining an image path');
+
+insert into auth.users(id) values
+('e1111111-1111-4111-8111-111111111111'),
+('e2222222-2222-4222-8222-222222222222'),
+('e3333333-3333-4333-8333-333333333333'),
+('e4444444-4444-4444-8444-444444444444');
+set local role service_role;
+update public.profiles set timezone = 'America/Los_Angeles' where id::text like 'e%';
+update public.profiles set is_pro = true where id = 'e1111111-1111-4111-8111-111111111111';
+insert into public.subscriptions(user_id, plan, source, status, current_period_end)
+values ('e2222222-2222-4222-8222-222222222222', 'pro_monthly', 'verification', 'active', '2027-01-01T00:00:00Z'),
+       ('e4444444-4444-4444-8444-444444444444', 'pro_monthly', 'verification', 'active', '2026-11-15T00:00:00Z');
+
+do $$
+declare
+    v_user uuid := 'e1111111-1111-4111-8111-111111111111';
+    v_id uuid;
+begin
+    v_id := public.reserve_plan_generation(v_user, '2026-03-07T12:00:00Z');
+    perform pg_temp.assert_true(v_id is not null, 'the first Free attempt reserves quota');
+    perform pg_temp.expect_error(format('select public.reserve_plan_generation(%L,%L)', v_user, '2026-03-14T11:59:59Z'),
+        'P0001', 'pro_required', 'Free quota counts unfinished attempts throughout a rolling 168-hour window');
+    v_id := public.reserve_plan_generation(v_user, '2026-03-14T12:00:00Z');
+    perform pg_temp.assert_true(v_id is not null
+        and (select count(*) = 2 from app_private.plan_generation_attempts where user_id = v_user)
+        and not exists (select 1 from public.workout_plans where user_id = v_user),
+        'Free quota resets at exactly 168 hours despite a DST transition and no stored plans');
+    perform pg_temp.expect_error(format('select public.reserve_plan_generation(%L,%L)', v_user, '2026-03-14T12:00:01Z'),
+        'P0001', 'pro_required', 'profiles.is_pro cannot bypass the subscription-based quota');
+end;
+$$;
+
+do $$
+declare
+    v_user uuid := 'e2222222-2222-4222-8222-222222222222';
+    v_id uuid;
+    v_i integer;
+begin
+    for v_i in 1..10 loop
+        v_id := public.reserve_plan_generation(v_user, '2026-11-15T07:30:00Z'::timestamptz + (v_i - 1) * interval '1 minute');
+        if v_i = 6 then
+            perform pg_temp.assert_true(v_id is not null, 'six consecutive Pro attempts are admitted');
+        end if;
+    end loop;
+    perform pg_temp.assert_true((select count(*) = 10 from app_private.plan_generation_attempts where user_id = v_user),
+        'ten Pro attempts fit in one user calendar day');
+    perform pg_temp.expect_error(format('select public.reserve_plan_generation(%L,%L)', v_user, '2026-11-15T07:59:59Z'),
+        'P0001', 'rate_limited', 'the eleventh Pro attempt is rate limited before midnight in the profile timezone');
+    v_id := public.reserve_plan_generation(v_user, '2026-11-15T08:00:00Z');
+    perform pg_temp.assert_true(v_id is not null, 'Pro quota resets at local midnight instead of UTC midnight');
+    v_id := public.reserve_plan_generation('e4444444-4444-4444-8444-444444444444', '2026-11-15T00:00:00Z');
+    perform pg_temp.expect_error(
+        $query$select public.reserve_plan_generation('e4444444-4444-4444-8444-444444444444','2026-11-15T00:00:01Z')$query$,
+        'P0001', 'pro_required', 'a subscription expiring exactly now uses the Free quota');
+end;
+$$;
+
+do $$
+declare
+    v_user uuid := 'e2222222-2222-4222-8222-222222222222';
+    v_attempts uuid[];
+    v_plan1 jsonb := '{"id":"f1111111-1111-4111-8111-111111111111","days":[{"weekday":1}]}';
+    v_plan2 jsonb := '{"id":"f2222222-2222-4222-8222-222222222222","days":[{"weekday":3}]}';
+    v_result jsonb;
+begin
+    select array_agg(id order by created_at) into v_attempts from app_private.plan_generation_attempts where user_id = v_user;
+    v_result := public.save_generated_plan(v_user, v_attempts[1], v_plan1, '{"age":30,"weekdays":[1]}');
+    perform pg_temp.assert_true(v_result = jsonb_build_object('plan', v_plan1)
+        and public.coin_balance(v_user) = 20
+        and (select input_snapshot = '{"age":30,"weekdays":[1]}'::jsonb from public.workout_plans where id = (v_plan1 ->> 'id')::uuid),
+        'first generated plan stores its snapshot and awards exactly twenty coins');
+    v_result := public.save_generated_plan(v_user, v_attempts[1], v_plan1, '{"age":30,"weekdays":[1]}');
+    perform pg_temp.assert_true(public.coin_balance(v_user) = 20
+        and (select count(*) = 1 from public.workout_plans where user_id = v_user),
+        'retrying plan persistence for the same attempt is idempotent');
+    v_result := public.save_generated_plan(v_user, v_attempts[2], v_plan2, '{"age":30,"weekdays":[3]}');
+    perform pg_temp.assert_true(public.coin_balance(v_user) = 20
+        and (select count(*) = 1 from public.coin_ledger where user_id = v_user and reason = 'first_plan')
+        and (select count(*) = 2 from public.workout_plans where user_id = v_user)
+        and (select count(*) = 1 from public.workout_plans where user_id = v_user and active)
+        and (select active from public.workout_plans where id = (v_plan2 ->> 'id')::uuid),
+        'later generation replaces the active plan without repeating the first-plan award');
+    perform pg_temp.expect_error(format(
+        'insert into public.workout_plans(user_id,input_snapshot,plan_json) values(%L,%L::jsonb,%L::jsonb)', v_user, '{}', '{}'),
+        '23505', null, 'the partial unique index rejects a second active plan');
+    perform pg_temp.expect_error(format('select public.save_generated_plan(%L,%L,%L::jsonb,%L::jsonb)',
+        'e1111111-1111-4111-8111-111111111111', v_attempts[3], v_plan1, '{}'),
+        'P0001', 'validation_error', 'a user cannot save a plan using another user generation attempt');
+end;
+$$;
+insert into public.food_logs(user_id, result_json)
+values ('e2222222-2222-4222-8222-222222222222', '{"items":[],"totals":{}}');
+select pg_temp.assert_true((select image_path is null from public.food_logs where user_id = 'e2222222-2222-4222-8222-222222222222'),
+    'nutrition result can be stored without an image');
+reset role;
+
+create function pg_temp.reject_first_plan_credit() returns trigger language plpgsql as $$
+begin
+    if new.reason = 'first_plan' then
+        raise exception using errcode = 'P7779', message = 'Injected first-plan ledger failure.';
+    end if;
+    return new;
+end;
+$$;
+create trigger verification_reject_first_plan_credit before insert on public.coin_ledger
+for each row execute function pg_temp.reject_first_plan_credit();
+set local role service_role;
+insert into public.workout_plans(id,user_id,input_snapshot,plan_json)
+values ('f3333333-3333-4333-8333-333333333333','e3333333-3333-4333-8333-333333333333','{}','{}');
+do $$
+declare v_attempt uuid;
+begin
+    v_attempt := public.reserve_plan_generation('e3333333-3333-4333-8333-333333333333','2026-11-15T15:00:00Z');
+    perform pg_temp.expect_error(format('select public.save_generated_plan(%L,%L,%L::jsonb,%L::jsonb)',
+        'e3333333-3333-4333-8333-333333333333', v_attempt,
+        '{"id":"f4444444-4444-4444-8444-444444444444","days":[{"weekday":1}]}', '{}'),
+        'P7779', 'Injected first-plan ledger failure.', 'first-plan ledger errors propagate');
+    perform pg_temp.assert_true(
+        (select active from public.workout_plans where id = 'f3333333-3333-4333-8333-333333333333')
+        and not exists (select 1 from public.workout_plans where id = 'f4444444-4444-4444-8444-444444444444')
+        and (select plan_id is null from app_private.plan_generation_attempts where id = v_attempt)
+        and public.coin_balance('e3333333-3333-4333-8333-333333333333') = 0,
+        'failed persistence restores the old active plan and rolls back the new plan, reward and attempt marker');
+    perform pg_temp.expect_error(
+        $query$select public.reserve_plan_generation('e3333333-3333-4333-8333-333333333333','2026-11-15T15:00:01Z')$query$,
+        'P0001', 'pro_required', 'a failed plan save still consumes its previously reserved generation attempt');
+end;
+$$;
+reset role;
+drop trigger verification_reject_first_plan_credit on public.coin_ledger;
+
+set local role anon;
+select pg_temp.expect_error($query$select public.reserve_plan_generation('e1111111-1111-4111-8111-111111111111')$query$,
+    '42501', null, 'anon cannot reserve generation quota');
+select pg_temp.expect_error($query$select * from app_private.plan_generation_attempts$query$,
+    '42501', null, 'anon cannot read the internal attempt ledger');
+reset role;
+set local role authenticated;
+select pg_temp.expect_error($query$select public.reserve_plan_generation('e1111111-1111-4111-8111-111111111111')$query$,
+    '42501', null, 'authenticated cannot reserve generation quota');
+select pg_temp.expect_error($query$select public.save_generated_plan('e1111111-1111-4111-8111-111111111111','f1111111-1111-4111-8111-111111111111','{}','{}')$query$,
+    '42501', null, 'authenticated cannot persist plans through the server RPC');
+reset role;
+rollback;

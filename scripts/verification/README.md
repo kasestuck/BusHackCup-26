@@ -43,6 +43,7 @@ Remove-Item Env:TEST_DATABASE_DISPOSABLE
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140001_initial_schema.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140002_profile_bootstrap_and_permissions.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140003_activity_rewards.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140004_ai_generation.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verification/assertions.sql
 ```
 
@@ -91,3 +92,11 @@ select has_function_privilege('anon', 'public.redeem_reward(uuid,uuid)', 'EXECUT
 Реальный Supabase Auth, PostgREST, Storage и HTTP-маршруты этот runner не вызывает. Примитив `auth.uid()` и роли воспроизводятся локально; это не настоящий JWT/Supabase Auth. Проверки приложения и точные curl приведены в `docs/backend-integration.md`. Проверка HMAC-окон и прикладной валидации выполняется через `node --test` в корне.
 
 Правила grants/RLS и EXECUTE сверены с [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) и [Supabase functions](https://supabase.com/docs/guides/database/functions). Перечень расхождений PDF, предложенных решений контракта и решений миграции находится в `docs/contract-proposal.md`.
+
+## Квоты AI и сохранение планов: миграция 004
+
+В конец `assertions.sql` добавлен независимый блок, исходные 28299 байт файла сохранены без изменений. SHA-256 этого префикса: `872a1a80417936e2965603d087e3e395df5b88a60b17ace16fb58b8e950ac2cc`. Проверки прежних 13 public-таблиц по-прежнему выполняются: внутренняя таблица попыток находится в `app_private`, отдельно проверяется её RLS и отсутствие доступа клиентских ролей.
+
+Новые SQL-кейсы проверяют скользящие 168 часов Free, квоту Pro по локальной полуночи, шестую/десятую/одиннадцатую попытки, использование реальной подписки вместо `profiles.is_pro`, сохранение снимка анкеты, единственную награду +20, повторную запись того же attempt, единственный active plan, запрет чужого attempt и полный откат при ошибке ledger. Попытка резервируется до AI и не отменяется при ошибке последующей записи плана. `food_logs.image_path` nullable: тест сохраняет только результат без изображения.
+
+`concurrency.mjs` дополнен конкурентным резервированием Free-квоты через реальные соединения и advisory lock: ровно один attempt, второй вызов получает `pro_required`. Производственный timestamp берётся после ожидания advisory lock; необязательный p_now предназначен только для доверенных service-role fixtures. Эти SQL-проверки не вызывают AI и не доказывают работу HTTP-провайдера.

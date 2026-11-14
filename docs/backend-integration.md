@@ -6,6 +6,8 @@
 
 ## Изменения контракта
 
+- AI-этап: добавлены `CatalogUnavailableErrorSchema` / `CatalogUnavailableResponseSchema` и выведенные типы для HTTP 503 `catalog_unavailable`; добавлены `AiUnavailableErrorSchema` / `AiUnavailableResponseSchema` и типы для HTTP 503 `ai_unavailable`. Общие error-union расширены. Первый код доступен plan/generate, второй — nutrition/analyze.
+- В plan/generate добавлен существующий HTTP 402 `pro_required` для Free-квоты. Незавершённая анкета сохраняет 422 `validation_error`, Pro-квота — 429 `rate_limited`. Формы успешных ответов не изменены, обязательные поля не добавлены.
 - Добавлены `GymNotFoundErrorSchema`, `GymNotFoundResponseSchema`, их выведенные типы и сообщение `The gym was not found.`: HTTP 404 `gym_not_found` в общих ошибках и QR-маршруте.
 - В ошибки QR-маршрута добавлен существующий HTTP 429 `rate_limited`.
 - По прямому указанию пользователя QR-маршрут не требует сессии, но требует `x-gym-key`; Bearer JWT добавлен как запасной способ авторизации остальных маршрутов.
@@ -46,10 +48,15 @@
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | Запасной anon key |
 | SUPABASE_SERVICE_ROLE_KEY | Только сервер: admin-клиент, каталоги и RPC записи |
 | GYM_ADMIN_KEY | Только сервер: общий ключ публичного QR-экрана |
+| AI_API_KEY | Только сервер: ключ AI-провайдера, без NEXT_PUBLIC-варианта |
+| AI_BASE_URL | Только сервер: базовый URL API, к которому добавляется /chat/completions |
+| AI_MODEL | Только сервер: имя модели в запросе |
 
 Для работы нужны URL, anon key, service role и GYM_ADMIN_KEY. Значения секретов не должны попадать в Git, ответы или логи. У service role и gym key нет вариантов NEXT_PUBLIC. `TEST_DATABASE_URL` и `TEST_DATABASE_DISPOSABLE=1` нужны только существующему SQL runner; native-runner сам задаёт их для изолированной локальной БД. Seed и live PostgREST smoke используют серверные SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY по своей документации; видео-валидатор ключей не требует.
 
-Для переноса `.ts` импортов нужны `allowImportingTsExtensions: true`, `noEmit: true`, DOM-типы для контрактного `File`, Next.js App Router. Применяются все три миграции в порядке имени; старые две не переписаны.
+Для вызова модели нужны все три AI-переменные; отсутствие конфигурации приводит к запасному плану при достаточном каталоге и к 503 ai_unavailable у nutrition. Секреты не логируются, публичные AI-переменные игнорируются.
+
+Для переноса `.ts` импортов нужны `allowImportingTsExtensions: true`, `noEmit: true`, DOM-типы для контрактного `File`, Next.js App Router. Применяются все четыре миграции в порядке имени; первые три не переписаны. Новых зависимостей для AI нет: используются fetch, node:http в тестах и существующий Zod 4.
 
 ## Авторизация и ошибки
 
@@ -76,7 +83,37 @@ Streak использует существующий алгоритм и timezon
 
 Demo rate limit: QR 60 запросов/IP/минуту и 300/ключ/минуту; check-in 10/пользователь/минуту. Счётчики процесса ограничены 10000 ключами, ключи/IP хешируются. В serverless/нескольких процессах лимит НЕ общий, при перезапуске сбрасывается. Reverse proxy должен перезаписывать x-forwarded-for/x-real-ip: без этого клиент может подделать IP. Без заголовков используется общий unknown bucket.
 
-Пока не реализованы plan/generate, plan/active, redeem API, billing, nutrition, partner/stats и UI входа. Существующая SQL-функция redeem сохранена, новых возможностей этого API не добавлялось. Главная страница временного каркаса — заглушка.
+Пока не реализованы redeem API, billing, partner/stats и UI входа. Существующая SQL-функция redeem сохранена, новых возможностей этого API не добавлялось. Главная страница временного каркаса — заглушка.
+
+## AI-план и nutrition
+
+`POST /api/plan/generate` принимает `{}` после авторизации. Полная анкета проверяется до резервирования квоты; незаполненная или невалидная анкета даёт 422. Имя, user ID, timezone и подписка не отправляются модели: AI получает только поля QuestionnaireSchema, серверный plan UUID, допустимые slug и их мышечные группы в JSON-значениях отдельного user-message. System prompt статический и основан на английском промпте PDF, стр. 13. Вредоносная строка в injuries.area отвергается enum-схемой; свободное injuries.when остаётся JSON-данными, а не частью инструкций. Структурирование JSON не заменяет последующие проверки допустимых упражнений.
+
+Миграция 004 создаёт `app_private.plan_generation_attempts`: RLS включён, клиентским ролям закрыты схема и таблица. В public по-прежнему 13 таблиц, во внутренней схеме добавлена одна. `reserve_plan_generation` с advisory lock считывает часы после получения блокировки и атомарно резервирует попытку. Free — одна попытка за последние 168 часов; истечение ровно 168 часов освобождает слот. Pro определяется только актуальным current_period_end, лимит — 10 попыток в локальный календарный день профиля, с учётом DST. Отклонённый запрос новую попытку не создаёт.
+
+Принятая попытка сохраняется до каталога/AI/сохранения плана отдельным завершённым RPC. Поэтому она остаётся потраченной даже при последующем 503 catalog_unavailable или ошибке сохранения. Это следует порядку шагов задания. Одна попытка HTTP-генерации допускает один внутренний повтор модели при ошибке JSON/схемы/семантики; запасной план тоже расходует попытку.
+
+Каталог выбирается с verified=true, non-null/nonempty video_youtube_id; те же условия и пригодность метаданных повторно проверяются локально. Ongoing-травмы исключают упражнения до AI; recovered передаются с областью и датой. `none` допускает только bodyweight; любой набор также допускает bodyweight, `full_gym` трактуется как доступ к full_gym/dumbbells/bands/none. Требуется минимум уникальных упражнений по длительности: 20→3, 30→4, 45→5, 60→6, 75→7. Для нескольких дней требуется минимум две мышечные группы, чтобы запасной план мог чередовать акцент. Недостаточный каталог — 503; обычный seed содержит только unverified-видео, поэтому требует ручного наполнения перед успешной генерацией.
+
+После Zod проверяются точные weekdays, длительность, диапазоны количества упражнений 3–4 / 4–5 / 5–6 / 6–8 / 7–9 и совместимость числа подходов с лимитами журнала. Неизвестные slug удаляются; если минимум нарушен — один повтор, затем запасной план. AI-схема не сообщает группу неизвестного slug, поэтому группа не угадывается. Name/video всегда подставляются из разрешённого каталога, UUID — серверный. При ongoing сервер обязательно добавляет `Consult a doctor before exercising with an ongoing injury.`
+
+Таймаут/недоступность/отсутствие AI-конфигурации сразу включают детерминированный запасной план из тех же упражнений. Он сохраняет дни и время, использует минимум упражнений, два подхода, 8–10 повторений, 60 секунд отдыха, чередует акцент мышечных групп. Контент при одинаковых входах детерминирован, новый plan UUID уникален; fallback не выдаётся за результат успешного вызова модели в отчёте. В успешном DTO нет дополнительного is_fallback.
+
+`save_generated_plan` атомарно деактивирует предыдущий план, создаёт новый, сохраняет ровно анкету QuestionnaireSchema в input_snapshot, помечает использованную попытку и выдаёт +20 через существующий уникальный first_plan индекс. Повтор сохранения одной попытки возвращает прежний план без награды. Обе новые RPC доступны только service_role, SECURITY INVOKER с пустым search_path. `GET /api/plan/active` возвращает проверенный Plan DTO либо 404 plan_not_found.
+
+`POST /api/nutrition/analyze` проверяет срок Pro до чтения multipart и до AI. Не-Pro — 402 и ноль обращений к модели. Разрешены JPEG/PNG/WebP по magic bytes, максимум 5 МиБ (5×1024² байт); MIME-заголовок файла не является доказательством формата. Проверяется сигнатура, не полное декодирование изображения. Multipart ограничен размером файла плюс 64 КиБ служебной оболочки, принимается ровно одно поле image. Фото передаётся как data URL, не сохраняется. Результат проверяется NutritionSuccessSchema; totals пересчитывается, если расхождение с суммой items превышает 0.01 по любому нутриенту. Ошибка AI — 503 ai_unavailable, без подставных значений. В food_logs записываются только user_id и result_json; image_path стал nullable. Лимит — 10 запросов пользователя в минуту, с прежними ограничениями памяти процесса/serverless.
+
+## Требует сверки
+
+Официальная документация фактического AI-провайдера не предоставлена и не проверялась. Весь специфичный формат собран в `openAiCompatibleFormat` в ai.ts. Перед подключением нужны подтверждения:
+
+- URL POST `{AI_BASE_URL}/chat/completions`, авторизация `Authorization: Bearer`, точное значение AI_MODEL.
+- Поддержка `response_format: {type: "json_schema", json_schema: {name, strict: true, schema}}`, схемы draft-7 и её ограничений/format.
+- Поддержка `reasoning_effort: "low"` совместно с JSON Schema и изображениями. Значение `none` код никогда не отправляет.
+- Поддержка multipart-content сообщений с `image_url.url` в виде data URL для JPEG/PNG/WebP и реальных лимитов размера.
+- Ответ в строковом `choices[0].message.content`, семантика refusal и HTTP-ошибок. Иные envelope/streaming/tool-call форматы пока не поддерживаются.
+
+Таймаут одного AI-вызова — 25 секунд, включая чтение тела; максимум два вызова при ошибках валидации. Ответ ограничен 1 МиБ, redirects запрещены. Реальные скорость, стоимость, совместимость схем, качество планов и оценок питания не проверены без ключей. Локальный fake подтверждает только принятое допущение протокола.
 
 ## Команды проверок
 
@@ -86,6 +123,7 @@ pnpm exec next build --webpack
 pnpm exec tsc --noEmit --incremental false
 node --test
 node --conditions=react-server --test lib/server/http.test.ts lib/server/activity.test.ts
+node --conditions=react-server --test lib/server/ai-nutrition.test.ts lib/server/plans.test.ts
 node scripts/verification/native-runner.mjs
 ```
 
@@ -134,13 +172,51 @@ where n.nspname='public' and proname in ('record_gym_checkin', 'record_workout_s
 -- Expected: security invoker and an empty search_path for both functions.
 ```
 
-## Реальные результаты текущего этапа
+## Проверки предыдущего этапа (QR и тренировки)
 
 - `pnpm exec next build --webpack`: код 0, `Compiled successfully in 6.2s`; все семь API-маршрутов — dynamic. Первый sandbox-запуск остановился на EPERM при создании каталога `.next`; повтор с разрешением записи прошёл.
 - `pnpm exec tsc --noEmit --incremental false`: код 0, вывод пустой.
-- `node --test`: 34 tests, 34 pass, 0 fail, 0 skipped. Два из этих тестов — обёртки, внутри которых проходят 16 проверок авторизации и реальных обработчиков с подставными ответами Supabase. Отдельные прямые прогоны http.test.ts и activity.test.ts с `--conditions=react-server` также прошли: по 8 тестов.
+- `node --test`: тогда сообщил 34 pass, но позднее обнаружено, что унаследованный NODE_TEST_CONTEXT мог пропускать дочерние тесты. Прямые прогоны http.test.ts и activity.test.ts с `--conditions=react-server` действительно прошли: по 8 тестов. На текущем AI-этапе все обёртки исправлены и перепроверены, как описано ниже.
 - `node scripts/verification/native-runner.mjs`: код 0, `PASS: native PostgreSQL verification completed.` Проверены все три миграции, права, откаты, полночь зала, чужой план, недельный бонус и реальная конкуренция. Первый запуск встретил EACCES на loopback; следующий выявил устаревшие права временных SQL test helpers после миграции 002. Явные grants helpers исправлены, финальный полный прогон прошёл. Существующий runner и PostgreSQL остановлены штатно.
 - Сверка контракта через Node: `PASS: draft exactly matches 17 proposal blocks; all 13 endpoint errors retain internal_error.`
 - Реальный dev-сервер на 127.0.0.1:3100 с временным демонстрационным GYM_ADMIN_KEY: curl без ключа и с неверным ключом — HTTP 401 `invalid_gym_key`; с правильным временным ключом — HTTP 500 `internal_error`, поскольку Supabase не настроен. Серверный лог: `SERVER CONFIGURATION ERROR: Missing server configuration: SUPABASE_SERVICE_ROLE_KEY.` Клиенту возвращено только `An unexpected error occurred.` Dev-сервер остановлен.
 
 Без ключей Supabase не запускались production Auth/REST, успешный QR с реальным залом, live PostgREST smoke, настоящий seed и HTTP check-in/sessions с действительной сессией. Локальный native PostgreSQL и mocked HTTP-тесты не обозначаются как end-to-end Supabase.
+
+## Реальные результаты AI-этапа
+
+- `pnpm exec next build --webpack`: код 0, `Compiled successfully in 2.4s`; все десять API-маршрутов dynamic, включая plan/generate, plan/active и nutrition/analyze.
+- `pnpm exec tsc --noEmit --incremental false`: код 0, вывод пустой.
+- Финальный `node --test`: 36 tests, 36 pass, 0 fail, 0 skipped, 3342.9184 ms. Четыре обёртки запускают 8 + 8 + 9 + 12 внутренних проверок и теперь проверяют реальные TAP counts, а не только код выхода. NODE_TEST_CONTEXT удаляется из окружения дочернего runner; рекурсивный пропуск тестов вызывает FAIL. Прямые прогоны AI/nutrition и plans также прошли: 9 и 12 тестов.
+- В timeout-тесте план вернулся примерно за 80–92 ms при тестовом лимите 75 ms и задержке фейка 1200 ms; выполнен один AI-запрос, затем fallback. Production timeout остаётся 25 s.
+- `node scripts/verification/native-runner.mjs`: код 0, `PASS: native PostgreSQL verification completed.` Все прежние assertions прошли. Новые проверки подтвердили rolling 168h/DST, актуальную подписку, Pro 6/10/11, полночь профиля, one-time +20, один active план, rollback и реальную конкуренцию Free через advisory lock. Native PostgreSQL остановлен, тестовые данные удалены/откачены. Журнал находится в игнорируемом `scripts/verification/.cache/postgres-kyLwvJ/commands.log`.
+- `git diff --numstat a117387 -- scripts/verification/assertions.sql`: `194 0` — ни одна прежняя строка не удалена. Исходные 28299 байт сохранены дословно, SHA-256 `872a1a80417936e2965603d087e3e395df5b88a60b17ace16fb58b8e950ac2cc`. Нормализованный префикс также совпадает с Git-версией a117387. Новые проверки добавлены после прежнего содержимого отдельной транзакцией.
+- Сверка contract draft с 17 блоками предложения и проверка новых error-union: PASS. Первые три миграции, корневые зависимости и каркас не изменены.
+
+Настоящие AI и Supabase не вызывались: ключей нет. Фейки — реальные локальные HTTP-серверы с контролируемыми ответами; квоты и транзакции дополнительно проверены настоящим локальным PostgreSQL. Проверка payload подтверждает фильтры травм/оборудования, отсутствие display_name и reasoning_effort=low. Проверка не-Pro подтверждает 402 и ноль запросов к fake AI. Это не проверка качества модели, провайдера или production-интеграции.
+
+## Повторная проверка AI и сохранности SQL-тестов
+
+```powershell
+node --test
+node --conditions=react-server --test lib/server/plans.test.ts lib/server/ai-nutrition.test.ts
+node scripts/verification/native-runner.mjs
+git diff --numstat a117387 -- scripts/verification/assertions.sql
+@'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+const old = execFileSync('git', ['show', 'a117387:scripts/verification/assertions.sql'], {encoding:'utf8'}).replace(/\r\n/g,'\n');
+const current = readFileSync('scripts/verification/assertions.sql','utf8').replace(/\r\n/g,'\n');
+assert.ok(current.startsWith(old));
+console.log('PASS: every original SQL assertion remains unchanged.');
+'@ | node --input-type=module
+```
+
+Команды ниже требуют реальных настроенных сервисов, проверенного каталога, пользовательского JWT и локального изображения. Они здесь **не запускались**:
+
+```powershell
+curl.exe -i -X POST http://127.0.0.1:3100/api/plan/generate -H "Authorization: Bearer $env:TEST_USER_JWT" -H 'Content-Type: application/json' --data '{}'
+curl.exe -i http://127.0.0.1:3100/api/plan/active -H "Authorization: Bearer $env:TEST_USER_JWT"
+curl.exe -i -X POST http://127.0.0.1:3100/api/nutrition/analyze -H "Authorization: Bearer $env:TEST_USER_JWT" -F "image=@$env:TEST_IMAGE_PATH"
+```
