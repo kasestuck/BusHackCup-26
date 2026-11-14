@@ -216,6 +216,12 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
   return z.object({ status: z.literal(status), body }).strict();
 }
 
+export const InvalidQrTokenErrorSchema = errorBody("invalid_qr_token");
+export const RewardNotFoundErrorSchema = errorBody("reward_not_found");
+export const RewardInactiveErrorSchema = errorBody("reward_inactive");
+export const RedemptionNotFoundErrorSchema = errorBody("redemption_not_found");
+export const AlreadyPurchasedErrorSchema = errorBody("already_purchased");
+export const PartnerNotFoundErrorSchema = errorBody("partner_not_found");
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
 export const GymNotFoundErrorSchema = errorBody("gym_not_found");
@@ -234,6 +240,12 @@ export const InternalErrorSchema = z.object({
   }).strict(),
 }).strict();
 
+export const InvalidQrTokenResponseSchema = httpError(422, InvalidQrTokenErrorSchema);
+export const RewardNotFoundResponseSchema = httpError(404, RewardNotFoundErrorSchema);
+export const RewardInactiveResponseSchema = httpError(409, RewardInactiveErrorSchema);
+export const RedemptionNotFoundResponseSchema = httpError(404, RedemptionNotFoundErrorSchema);
+export const AlreadyPurchasedResponseSchema = httpError(409, AlreadyPurchasedErrorSchema);
+export const PartnerNotFoundResponseSchema = httpError(404, PartnerNotFoundErrorSchema);
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
 export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
@@ -248,6 +260,7 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  InvalidQrTokenErrorSchema, RewardNotFoundErrorSchema, RewardInactiveErrorSchema, RedemptionNotFoundErrorSchema, AlreadyPurchasedErrorSchema, PartnerNotFoundErrorSchema,
   CatalogUnavailableErrorSchema, AiUnavailableErrorSchema,
   GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
@@ -256,6 +269,7 @@ export const ApiErrorSchema = z.union([
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  InvalidQrTokenResponseSchema, RewardNotFoundResponseSchema, RewardInactiveResponseSchema, RedemptionNotFoundResponseSchema, AlreadyPurchasedResponseSchema, PartnerNotFoundResponseSchema,
   CatalogUnavailableResponseSchema, AiUnavailableResponseSchema,
   GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
@@ -264,6 +278,18 @@ export const ApiErrorResponseSchema = z.union([
   ValidationResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
 ]);
+export type InvalidQrTokenError = z.infer<typeof InvalidQrTokenErrorSchema>;
+export type InvalidQrTokenResponse = z.infer<typeof InvalidQrTokenResponseSchema>;
+export type RewardNotFoundError = z.infer<typeof RewardNotFoundErrorSchema>;
+export type RewardNotFoundResponse = z.infer<typeof RewardNotFoundResponseSchema>;
+export type RewardInactiveError = z.infer<typeof RewardInactiveErrorSchema>;
+export type RewardInactiveResponse = z.infer<typeof RewardInactiveResponseSchema>;
+export type RedemptionNotFoundError = z.infer<typeof RedemptionNotFoundErrorSchema>;
+export type RedemptionNotFoundResponse = z.infer<typeof RedemptionNotFoundResponseSchema>;
+export type AlreadyPurchasedError = z.infer<typeof AlreadyPurchasedErrorSchema>;
+export type AlreadyPurchasedResponse = z.infer<typeof AlreadyPurchasedResponseSchema>;
+export type PartnerNotFoundError = z.infer<typeof PartnerNotFoundErrorSchema>;
+export type PartnerNotFoundResponse = z.infer<typeof PartnerNotFoundResponseSchema>;
 export type InternalError = z.infer<typeof InternalErrorSchema>;
 export type CatalogUnavailableError = z.infer<typeof CatalogUnavailableErrorSchema>;
 export type CatalogUnavailableResponse = z.infer<typeof CatalogUnavailableResponseSchema>;
@@ -276,6 +302,12 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
 export const ErrorMessageExamples = {
+  invalid_qr_token: "The QR token is invalid or expired.",
+  reward_not_found: "The reward was not found.",
+  reward_inactive: "The reward is not active.",
+  redemption_not_found: "The redemption was not found.",
+  already_purchased: "A purchase has already been recorded for this redemption.",
+  partner_not_found: "The partner was not found.",
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
   gym_not_found: "The gym was not found.",
@@ -456,11 +488,13 @@ export const CheckinSuccessSchema = z.object({
   balance: CoinsSchema,
 }).strict();
 export const CheckinErrorSchema = z.union([
+  InvalidQrTokenErrorSchema,
   UnauthorizedErrorSchema, AlreadyCheckedInErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const CheckinErrorResponseSchema = z.union([
+  InvalidQrTokenResponseSchema,
   UnauthorizedResponseSchema, AlreadyCheckedInResponseSchema,
   ValidationResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
@@ -499,10 +533,12 @@ export const RedeemSuccessSchema = z.object({
   { message: "Exactly one reward result must be present." },
 );
 export const RedeemErrorSchema = z.union([
+  RewardNotFoundErrorSchema, RewardInactiveErrorSchema,
   UnauthorizedErrorSchema, InsufficientCoinsErrorSchema, ValidationErrorSchema,
   InternalErrorSchema,
 ]);
 export const RedeemErrorResponseSchema = z.union([
+  RewardNotFoundResponseSchema, RewardInactiveResponseSchema,
   UnauthorizedResponseSchema, InsufficientCoinsResponseSchema, ValidationResponseSchema,
   InternalErrorResponseSchema,
 ]);
@@ -573,7 +609,6 @@ export type NutritionError = z.infer<typeof NutritionErrorSchema>;
 export type NutritionErrorResponse = z.infer<typeof NutritionErrorResponseSchema>;
 
 
-
 export const PartnerStatsRequestSchema = z.object({
   query: z.object({ partner_id: UuidSchema }).strict(),
 }).strict();
@@ -583,10 +618,12 @@ export const PartnerStatsSuccessSchema = z.object({
   commission_cents: CountSchema,
 }).strict();
 export const PartnerStatsErrorSchema = z.union([
+  PartnerNotFoundErrorSchema,
   UnauthorizedErrorSchema, ValidationErrorSchema,
   InternalErrorSchema,
 ]);
 export const PartnerStatsErrorResponseSchema = z.union([
+  PartnerNotFoundResponseSchema,
   UnauthorizedResponseSchema, ValidationResponseSchema,
   InternalErrorResponseSchema,
 ]);
@@ -597,7 +634,32 @@ export type PartnerStatsError = z.infer<typeof PartnerStatsErrorSchema>;
 export type PartnerStatsErrorResponse = z.infer<typeof PartnerStatsErrorResponseSchema>;
 
 
+export const SimulatePurchaseRequestSchema = z.object({ redemption_id: UuidSchema }).strict();
+export const SimulatePurchaseSuccessSchema = z.object({
+  sale_id: UuidSchema,
+  amount_cents: CountSchema,
+  commission_cents: CountSchema,
+}).strict();
+export const SimulatePurchaseErrorSchema = z.union([
+  UnauthorizedErrorSchema, ValidationErrorSchema, RedemptionNotFoundErrorSchema,
+  AlreadyPurchasedErrorSchema, InternalErrorSchema,
+]);
+export const SimulatePurchaseErrorResponseSchema = z.union([
+  UnauthorizedResponseSchema, ValidationResponseSchema, RedemptionNotFoundResponseSchema,
+  AlreadyPurchasedResponseSchema, InternalErrorResponseSchema,
+]);
+export type SimulatePurchaseRequest = z.infer<typeof SimulatePurchaseRequestSchema>;
+export type SimulatePurchaseSuccess = z.infer<typeof SimulatePurchaseSuccessSchema>;
+export type SimulatePurchaseError = z.infer<typeof SimulatePurchaseErrorSchema>;
+export type SimulatePurchaseErrorResponse = z.infer<typeof SimulatePurchaseErrorResponseSchema>;
+
+
 export const EndpointContracts = {
+  simulatePurchase: {
+    method: "POST", path: "/api/partner/simulate-purchase", success_status: 200,
+    request: SimulatePurchaseRequestSchema, success: SimulatePurchaseSuccessSchema,
+    error: SimulatePurchaseErrorResponseSchema,
+  },
   me: {
     method: "GET", path: "/api/me", success_status: 200,
     request: MeRequestSchema, success: MeSuccessSchema, error: MeErrorResponseSchema,

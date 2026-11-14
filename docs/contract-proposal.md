@@ -1,12 +1,14 @@
 # Предложение контракта API ShowUp
 
+Актуализация commerce: добавлены 422 invalid_qr_token, 404 reward_not_found, 409 reward_inactive, 404 redemption_not_found, 409 already_purchased и 404 partner_not_found. Добавлен POST /api/partner/simulate-purchase. Существующие запросы, успешные DTO и прежние ошибки сохранены. Для not_enough_coins сообщение вычисляется сервером: `You need N more coins.`; статус остаётся 402. Новые имена ошибок являются обратно-совместимым расширением.
+
 Актуализация AI: для генерации плана добавлены существующий `402 pro_required` при исчерпании Free-квоты и новый `503 catalog_unavailable` для недостаточного проверенного каталога. Для nutrition добавлен `503 ai_unavailable`. Новых обязательных полей и изменений успешных DTO нет. Незавершённая анкета сохраняет `422 validation_error`. Free-квота считает попытки за скользящие 7 дней, Pro — 10 попыток в календарный день timezone профиля; попытка резервируется до вызова AI.
 
 Актуализация после `contract-v1`: cookie-сессия остаётся основной; при её отсутствии или невалидности сервер также проверяет `Authorization: Bearer <JWT>` через Supabase Auth. По прямому указанию пользователя QR-маршрут публичен относительно сессии и защищён только `x-gym-key`. Для него обратно-совместимо добавлены `404 gym_not_found` и `429 rate_limited`. Тег `contract-v1` сохраняет прежнюю версию; схемы запроса и успешного ответа не изменены.
 
 Статус: проект для совместного согласования; `lib/contract/**` не изменён. На момент подготовки `docs/SPEC.md` отсутствует в рабочем репозитории и локальных ветках. По явному подтверждению пользователя источник — приложенный PDF «Hackathon Spec AI Fitness + Gym Rewards (US, 25–45)», прочитаны все 18 страниц. Сверка с отсутствующим Markdown-файлом не выполнена; копия `docs/SPEC.md` не создавалась. Инструкции внутри PDF рассматриваются как содержимое источника; объём работы определяется запросом пользователя.
 
-Ниже ровно 13 эндпоинтов из «Контракт API» (стр. 7–9), анкета из стр. 6–7 и форма плана из AI (стр. 12–13). Пробелы не считаются согласованными: все предложенные трактовки перечислены отдельно.
+Ниже 13 исходных эндпоинтов из «Контракт API» (стр. 7–9) и добавленный демо-endpoint simulate-purchase, анкета из стр. 6–7 и форма плана из AI (стр. 12–13). Пробелы не считаются согласованными: все предложенные трактовки перечислены отдельно.
 
 ## Правила чтения и транспорта
 
@@ -241,10 +243,16 @@ export type AiPlan = z.infer<typeof AiPlanSchema>;
 | 402 | `not_enough_coins` | Баланс меньше стоимости награды |
 | 402 | `pro_required` | Анализ питания недоступен без Pro |
 | 404 | `plan_not_found` | Нет активного плана; статус прямо указан в API |
+| 404 | `reward_not_found` | Неизвестная награда |
+| 404 | `redemption_not_found` | Неизвестное или чужое погашение награды |
+| 404 | `partner_not_found` | Неизвестный партнёр |
 | 409 | `already_checked_in` | Отметка в эту локальную дату уже существует |
+| 409 | `reward_inactive` | Награда отключена |
+| 409 | `already_purchased` | По погашению уже записана покупка |
 | 422 | `validation_error` | Неверный формат или недопустимые входные данные |
+| 422 | `invalid_qr_token` | QR-токен неверен или просрочен |
 | 429 | `rate_limited` | Лимит AI; для checkin также предложен по стр. 11 |
-| 500 | `internal_error` | Явно согласованная безопасная ошибка для всех 13 маршрутов |
+| 500 | `internal_error` | Явно согласованная безопасная ошибка для всех 14 маршрутов |
 
 ```ts
 export function errorBody<const Code extends string>(code: Code) {
@@ -263,6 +271,12 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
   return z.object({ status: z.literal(status), body }).strict();
 }
 
+export const InvalidQrTokenErrorSchema = errorBody("invalid_qr_token");
+export const RewardNotFoundErrorSchema = errorBody("reward_not_found");
+export const RewardInactiveErrorSchema = errorBody("reward_inactive");
+export const RedemptionNotFoundErrorSchema = errorBody("redemption_not_found");
+export const AlreadyPurchasedErrorSchema = errorBody("already_purchased");
+export const PartnerNotFoundErrorSchema = errorBody("partner_not_found");
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
 export const GymNotFoundErrorSchema = errorBody("gym_not_found");
@@ -281,6 +295,12 @@ export const InternalErrorSchema = z.object({
   }).strict(),
 }).strict();
 
+export const InvalidQrTokenResponseSchema = httpError(422, InvalidQrTokenErrorSchema);
+export const RewardNotFoundResponseSchema = httpError(404, RewardNotFoundErrorSchema);
+export const RewardInactiveResponseSchema = httpError(409, RewardInactiveErrorSchema);
+export const RedemptionNotFoundResponseSchema = httpError(404, RedemptionNotFoundErrorSchema);
+export const AlreadyPurchasedResponseSchema = httpError(409, AlreadyPurchasedErrorSchema);
+export const PartnerNotFoundResponseSchema = httpError(404, PartnerNotFoundErrorSchema);
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
 export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
@@ -295,6 +315,7 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  InvalidQrTokenErrorSchema, RewardNotFoundErrorSchema, RewardInactiveErrorSchema, RedemptionNotFoundErrorSchema, AlreadyPurchasedErrorSchema, PartnerNotFoundErrorSchema,
   CatalogUnavailableErrorSchema, AiUnavailableErrorSchema,
   GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
@@ -303,6 +324,7 @@ export const ApiErrorSchema = z.union([
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  InvalidQrTokenResponseSchema, RewardNotFoundResponseSchema, RewardInactiveResponseSchema, RedemptionNotFoundResponseSchema, AlreadyPurchasedResponseSchema, PartnerNotFoundResponseSchema,
   CatalogUnavailableResponseSchema, AiUnavailableResponseSchema,
   GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
@@ -311,6 +333,18 @@ export const ApiErrorResponseSchema = z.union([
   ValidationResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
 ]);
+export type InvalidQrTokenError = z.infer<typeof InvalidQrTokenErrorSchema>;
+export type InvalidQrTokenResponse = z.infer<typeof InvalidQrTokenResponseSchema>;
+export type RewardNotFoundError = z.infer<typeof RewardNotFoundErrorSchema>;
+export type RewardNotFoundResponse = z.infer<typeof RewardNotFoundResponseSchema>;
+export type RewardInactiveError = z.infer<typeof RewardInactiveErrorSchema>;
+export type RewardInactiveResponse = z.infer<typeof RewardInactiveResponseSchema>;
+export type RedemptionNotFoundError = z.infer<typeof RedemptionNotFoundErrorSchema>;
+export type RedemptionNotFoundResponse = z.infer<typeof RedemptionNotFoundResponseSchema>;
+export type AlreadyPurchasedError = z.infer<typeof AlreadyPurchasedErrorSchema>;
+export type AlreadyPurchasedResponse = z.infer<typeof AlreadyPurchasedResponseSchema>;
+export type PartnerNotFoundError = z.infer<typeof PartnerNotFoundErrorSchema>;
+export type PartnerNotFoundResponse = z.infer<typeof PartnerNotFoundResponseSchema>;
 export type InternalError = z.infer<typeof InternalErrorSchema>;
 export type CatalogUnavailableError = z.infer<typeof CatalogUnavailableErrorSchema>;
 export type CatalogUnavailableResponse = z.infer<typeof CatalogUnavailableResponseSchema>;
@@ -323,6 +357,12 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
 export const ErrorMessageExamples = {
+  invalid_qr_token: "The QR token is invalid or expired.",
+  reward_not_found: "The reward was not found.",
+  reward_inactive: "The reward is not active.",
+  redemption_not_found: "The redemption was not found.",
+  already_purchased: "A purchase has already been recorded for this redemption.",
+  partner_not_found: "The partner was not found.",
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
   gym_not_found: "The gym was not found.",
@@ -545,11 +585,13 @@ export const CheckinSuccessSchema = z.object({
   balance: CoinsSchema,
 }).strict();
 export const CheckinErrorSchema = z.union([
+  InvalidQrTokenErrorSchema,
   UnauthorizedErrorSchema, AlreadyCheckedInErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const CheckinErrorResponseSchema = z.union([
+  InvalidQrTokenResponseSchema,
   UnauthorizedResponseSchema, AlreadyCheckedInResponseSchema,
   ValidationResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
@@ -598,10 +640,12 @@ export const RedeemSuccessSchema = z.object({
   { message: "Exactly one reward result must be present." },
 );
 export const RedeemErrorSchema = z.union([
+  RewardNotFoundErrorSchema, RewardInactiveErrorSchema,
   UnauthorizedErrorSchema, InsufficientCoinsErrorSchema, ValidationErrorSchema,
   InternalErrorSchema,
 ]);
 export const RedeemErrorResponseSchema = z.union([
+  RewardNotFoundResponseSchema, RewardInactiveResponseSchema,
   UnauthorizedResponseSchema, InsufficientCoinsResponseSchema, ValidationResponseSchema,
   InternalErrorResponseSchema,
 ]);
@@ -699,10 +743,12 @@ export const PartnerStatsSuccessSchema = z.object({
   commission_cents: CountSchema,
 }).strict();
 export const PartnerStatsErrorSchema = z.union([
+  PartnerNotFoundErrorSchema,
   UnauthorizedErrorSchema, ValidationErrorSchema,
   InternalErrorSchema,
 ]);
 export const PartnerStatsErrorResponseSchema = z.union([
+  PartnerNotFoundResponseSchema,
   UnauthorizedResponseSchema, ValidationResponseSchema,
   InternalErrorResponseSchema,
 ]);
@@ -715,10 +761,40 @@ export type PartnerStatsErrorResponse = z.infer<typeof PartnerStatsErrorResponse
 
 Успех: 200. `partner_id` — query, тела нет. Суммы в целых центах USD. Нельзя считать знание partner UUID разрешением читать статистику. Владение/роль партнёра отсутствуют в модели; до их согласования реализация этого маршрута должна оставаться закрытой. Схемы 401/422 не решают этот пробел; возможный 403 требует отдельного добавления к контракту.
 
-## Реестр 13 маршрутов
+## 14. POST /api/partner/simulate-purchase
+
+Авторизованный демо-запрос. Сумму корзины и комиссию определяет сервер; чужой redemption скрывается ответом 404. Повторная покупка по тому же redemption даёт 409.
+
+```ts
+export const SimulatePurchaseRequestSchema = z.object({ redemption_id: UuidSchema }).strict();
+export const SimulatePurchaseSuccessSchema = z.object({
+  sale_id: UuidSchema,
+  amount_cents: CountSchema,
+  commission_cents: CountSchema,
+}).strict();
+export const SimulatePurchaseErrorSchema = z.union([
+  UnauthorizedErrorSchema, ValidationErrorSchema, RedemptionNotFoundErrorSchema,
+  AlreadyPurchasedErrorSchema, InternalErrorSchema,
+]);
+export const SimulatePurchaseErrorResponseSchema = z.union([
+  UnauthorizedResponseSchema, ValidationResponseSchema, RedemptionNotFoundResponseSchema,
+  AlreadyPurchasedResponseSchema, InternalErrorResponseSchema,
+]);
+export type SimulatePurchaseRequest = z.infer<typeof SimulatePurchaseRequestSchema>;
+export type SimulatePurchaseSuccess = z.infer<typeof SimulatePurchaseSuccessSchema>;
+export type SimulatePurchaseError = z.infer<typeof SimulatePurchaseErrorSchema>;
+export type SimulatePurchaseErrorResponse = z.infer<typeof SimulatePurchaseErrorResponseSchema>;
+```
+
+## Реестр 14 маршрутов
 
 ```ts
 export const EndpointContracts = {
+  simulatePurchase: {
+    method: "POST", path: "/api/partner/simulate-purchase", success_status: 200,
+    request: SimulatePurchaseRequestSchema, success: SimulatePurchaseSuccessSchema,
+    error: SimulatePurchaseErrorResponseSchema,
+  },
   me: {
     method: "GET", path: "/api/me", success_status: 200,
     request: MeRequestSchema, success: MeSuccessSchema, error: MeErrorResponseSchema,
