@@ -24,7 +24,7 @@ function RewardRow({ reward, balance }: { reward: Reward; balance: number }) {
         {reward.kind === "pro_month" ? "PRO" : reward.discount_pct ? `${reward.discount_pct}%` : <IconGift size={18} />}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[0.9375rem] font-medium text-ink">{reward.title}</p>
+        <p className="line-clamp-2 text-[0.9375rem] font-medium leading-snug text-ink">{reward.title}</p>
         <p className="mt-0.5 flex items-center gap-1 text-xs tabular text-muted">
           <IconCoin size={13} className={ready ? "text-lime" : ""} />
           {formatNumber(reward.cost_coins)} coins
