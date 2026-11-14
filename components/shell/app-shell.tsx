@@ -10,14 +10,16 @@ import { formatNumber } from "@/lib/client/dashboard";
 import { Wordmark } from "@/components/brand/wordmark";
 import { cx } from "@/components/ui/cx";
 import { Skeleton } from "@/components/ui/skeleton";
-import { IconBowl, IconCalendar, IconCoin, IconGift, IconHome, IconUser } from "@/components/ui/icons";
+import { IconBowl, IconCalendar, IconChat, IconCoin, IconGift, IconHome, IconUser } from "@/components/ui/icons";
 
+/** `mobile: false` items stay out of the 5-slot bottom bar (Profile is the header avatar there). */
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: IconHome },
-  { href: "/plan", label: "My Plan", icon: IconCalendar },
-  { href: "/nutrition", label: "Nutrition", icon: IconBowl },
-  { href: "/rewards", label: "Rewards", icon: IconGift },
-  { href: "/profile", label: "Profile", icon: IconUser },
+  { href: "/dashboard", label: "Dashboard", icon: IconHome, mobile: true },
+  { href: "/plan", label: "My Plan", icon: IconCalendar, mobile: true },
+  { href: "/coach", label: "Coach", icon: IconChat, mobile: true },
+  { href: "/nutrition", label: "Nutrition", icon: IconBowl, mobile: true },
+  { href: "/rewards", label: "Rewards", icon: IconGift, mobile: true },
+  { href: "/profile", label: "Profile", icon: IconUser, mobile: false },
 ] as const;
 
 function useIsActive() {
@@ -122,7 +124,7 @@ function TopNavLinks({ isActive }: { isActive: IsActive }) {
 function BottomNavLinks({ isActive }: { isActive: IsActive }) {
   return (
     <ul className="mx-auto grid h-[68px] max-w-md grid-cols-5 px-1">
-      {NAV.map(({ href, label, icon: Icon }) => {
+      {NAV.filter((n) => n.mobile).map(({ href, label, icon: Icon }) => {
         const active = isActive(href);
         return (
           <li key={href}>

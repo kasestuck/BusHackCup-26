@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LandingNav } from "@/components/landing/landing-nav";
+import { CoachSection } from "@/components/landing/coach-section";
 import {
   FinalCta,
   Hero,
@@ -32,6 +33,7 @@ export default function LandingPage() {
         <Hero />
         <Problem />
         <HowItWorks />
+        <CoachSection />
         <Rewards />
         <Trust />
         <Pricing />

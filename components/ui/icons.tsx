@@ -143,6 +143,13 @@ export const IconBowl = (p: IconProps) => (
   </Base>
 );
 
+export const IconChat = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 16h-6.5L6 19.5V16H7" />
+    <path d="M8.5 9h7M8.5 12.2h4.5" />
+  </Base>
+);
+
 export const IconShield = (p: IconProps) => (
   <Base {...p}>
     <path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-2.5Z" />
