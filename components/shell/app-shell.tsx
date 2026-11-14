@@ -59,7 +59,7 @@ function CheckInButton() {
     <Link
       href="/checkin"
       aria-label="Gym check-in"
-      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-lime px-2.5 font-display text-sm font-semibold text-lime-ink shadow-[0_0_0_1px_rgb(200_255_69/0.4),0_8px_24px_-12px_rgb(200_255_69/0.6)] transition-[background-color,transform] duration-200 hover:bg-lime-hover active:scale-95 sm:px-3.5 lg:px-2.5 xl:px-3.5"
+      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-lime px-2.5 font-display text-sm font-semibold text-lime-ink shadow-[0_0_0_1px_rgb(200_255_69/0.4),0_8px_24px_-12px_rgb(200_255_69/0.6)] transition-[background-color,transform] duration-200 hover:bg-lime-hover active:scale-95 sm:px-3.5 lg:px-2.5 xl:px-3.5"
     >
       <IconMapPin size={17} />
       <span className="hidden sm:inline lg:hidden xl:inline">Check in</span>
@@ -123,13 +123,13 @@ function TopNavLinks({ isActive }: { isActive: IsActive }) {
       {NAV.map(({ href, label }) => {
         const active = isActive(href);
         return (
-          // Profile is also the header avatar, so it gives up its slot on narrow desktops (1024–1279px).
-          <li key={href} className={href === "/profile" ? "hidden xl:list-item" : undefined}>
+          // Profile is also the header avatar, so it only takes a nav slot on wide screens (1536px+).
+          <li key={href} className={href === "/profile" ? "hidden 2xl:list-item" : undefined}>
             <Link
               href={href}
               aria-current={active ? "page" : undefined}
               className={cx(
-                "relative inline-flex h-10 items-center rounded-md px-2.5 text-[0.9375rem] xl:px-3.5 font-medium transition-colors",
+                "relative inline-flex h-10 items-center whitespace-nowrap rounded-md px-2.5 text-[0.9375rem] font-medium transition-colors xl:px-3.5",
                 active ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
@@ -203,7 +203,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-4 px-4 sm:px-6 lg:h-[72px] lg:px-8 xl:gap-6">
           <Wordmark compact />
-          <nav aria-label="Primary" className="hidden lg:block">
+          <nav aria-label="Primary" className="hidden shrink-0 lg:block">
             <Suspense fallback={<TopNavLinks isActive={NONE_ACTIVE} />}>
               <ActiveTopNav />
             </Suspense>
