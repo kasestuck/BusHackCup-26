@@ -1,9 +1,6 @@
 import { ActivePlanSuccessSchema } from "../../../../lib/server/contract.ts";
 import { HttpError, jsonResponse, withAuth } from "../../../../lib/server/http.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const GET = withAuth(async (_request, { user, supabase }) => {
   const { data, error } = await supabase.from("workout_plans")
     .select("plan_json").eq("user_id", user.id).eq("active", true).maybeSingle();

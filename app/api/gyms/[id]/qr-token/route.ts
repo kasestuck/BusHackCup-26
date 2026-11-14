@@ -5,9 +5,6 @@ import { createGymQrToken, safeEqualText } from "../../../../../lib/server/qr.ts
 import { hashRateLimitKey, rateLimiter } from "../../../../../lib/server/rate-limit.ts";
 import { createAdminClient, ServerConfigurationError } from "../../../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const limits = ECONOMY.rateLimits;

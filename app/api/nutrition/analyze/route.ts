@@ -6,9 +6,6 @@ import { analyzeNutritionImage, readNutritionImage } from "../../../../lib/serve
 import { hashRateLimitKey, rateLimiter } from "../../../../lib/server/rate-limit.ts";
 import { createAdminClient } from "../../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user, supabase }) => {
   // Verify current subscription before reading the upload or calling the AI provider.
   if (!await readIsPro(supabase, user.id, new Date())) throw new HttpError(402, "pro_required");

@@ -4,9 +4,6 @@ import { ECONOMY } from "../../../../lib/server/economy.ts";
 import { jsonResponse, parseBody, withAuth } from "../../../../lib/server/http.ts";
 import { createAdminClient } from "../../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user }) => {
   const input = await parseBody(request, SimulatePurchaseRequestSchema);
   const { data, error } = await createAdminClient().rpc("simulate_partner_purchase", {

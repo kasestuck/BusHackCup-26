@@ -3,9 +3,6 @@ import { generatePromoCandidates, throwCommerceError } from "../../../../lib/ser
 import { jsonResponse, parseBody, withAuth } from "../../../../lib/server/http.ts";
 import { createAdminClient } from "../../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user }) => {
   const input = await parseBody(request, RedeemRequestSchema);
   const { data, error } = await createAdminClient().rpc("redeem_reward", {

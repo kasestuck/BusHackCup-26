@@ -3,9 +3,6 @@ import { HttpError, jsonResponse, parseBody, withAuth } from "../../../lib/serve
 import { validateSessionLog } from "../../../lib/server/session-validation.ts";
 import { createAdminClient } from "../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user, supabase }) => {
   const input = await parseBody(request, SessionsRequestSchema);
   const { data: plan, error: planError } = await supabase.from("workout_plans")

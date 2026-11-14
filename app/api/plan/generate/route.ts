@@ -7,8 +7,6 @@ import { HttpError, jsonResponse, parseBody, withAuth } from "../../../../lib/se
 import { CatalogUnavailableError, createWorkoutPlan, fallbackPlan, preparePlanCatalog, questionnaireFromProfile, type CatalogExercise } from "../../../../lib/server/plans.ts";
 import { createAdminClient } from "../../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 // Next.js requires a literal; the type keeps it aligned with the central limit.
 export const maxDuration: typeof ECONOMY.ai.planRouteMaxDurationSeconds = 60;
 

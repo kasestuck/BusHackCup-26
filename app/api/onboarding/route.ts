@@ -3,9 +3,6 @@ import { PROFILE_COLUMNS, readIsPro } from "../../../lib/server/data.ts";
 import { HttpError, jsonResponse, parseBody, withAuth } from "../../../lib/server/http.ts";
 import { createAdminClient } from "../../../lib/server/supabase.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user, supabase }) => {
   const input = await parseBody(request, OnboardingRequestSchema);
   const admin = createAdminClient();

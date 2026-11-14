@@ -8,9 +8,6 @@ import { calculateStreak } from "../../../lib/server/streak.ts";
 import { createAdminClient } from "../../../lib/server/supabase.ts";
 import { localDateAt } from "../../../lib/server/time.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const POST = withAuth(async (request, { user, supabase }) => {
   const limits = ECONOMY.rateLimits;
   if (!rateLimiter.consume(hashRateLimitKey("checkin-user", user.id), limits.checkinPerUser, limits.windowSeconds)) {

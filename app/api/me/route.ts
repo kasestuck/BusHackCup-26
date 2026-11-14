@@ -4,9 +4,6 @@ import { jsonResponse, withAuth } from "../../../lib/server/http.ts";
 import { calculateStreak } from "../../../lib/server/streak.ts";
 import { localDateAt } from "../../../lib/server/time.ts";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const GET = withAuth(async (_request, { user, supabase }) => {
   const now = new Date();
   const [profile, coinsBalance, isPro, hasPlan] = await Promise.all([

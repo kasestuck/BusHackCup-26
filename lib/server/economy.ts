@@ -64,7 +64,7 @@ export function calculateCommissionCents(amountCents: number, commissionPct: num
     || Math.abs(commissionPct * 100 - basisPoints) > 1e-8) {
     throw new RangeError("Commission requires nonnegative integer cents and a percentage with at most two decimal places.");
   }
-  return Number(BigInt(amountCents) * BigInt(basisPoints) / 10_000n);
+  return Number(BigInt(amountCents) * BigInt(basisPoints) / BigInt(10_000));
 }
 
 /** Award five XP per completed set, capped at one hundred XP per session. */
