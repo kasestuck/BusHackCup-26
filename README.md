@@ -46,9 +46,9 @@ agrees and implements it (model call via `lib/server/ai.ts`, with the user's pla
 
 ## Backend
 
-**Integration is blocked:** the frontend and backend contracts contain incompatible fields. The instructions below describe the original BACK branch, not a verified integration build. See [integration status](docs/integration-status.md) and the [conditional hosting guide](docs/hosting-vercel.md) before installing dependencies or deploying. The frontend uses npm and Turbopack; the approved no-video mode is still pending.
+The integrated release passes the production build, TypeScript, client/server tests and native PostgreSQL checks. Live Meta plan generation and AI Coach were verified; all 55 exercise videos were approved by the owner and imported into Supabase. See [integration status](docs/integration-status.md) and the [Vercel guide](docs/hosting-vercel.md). The server contract facade still isolates the draft schemas; existing frontend schemas remain unchanged.
 
-Сервер — Next.js App Router, TypeScript, Zod и Supabase. Требуются Node.js 22.19+ (проверено 24.22.1) и pnpm 11.25.0. Каркас вынесен в отдельный коммит `fbc5138` с сообщением `chore: throwaway scaffold (do not merge)`; backend можно перенести в общий проект отдельно от него.
+Сервер — Next.js App Router, TypeScript, Zod и Supabase. Текущая интеграция проверена на Node.js 26.13.1 и npm с корневым package-lock.json. Отдельный scripts/verification использует собственные зависимости и lockfile. Временный backend-каркас не переносился во фронт.
 
 ### Запуск
 
@@ -67,7 +67,7 @@ agrees and implements it (model call via `lib/server/ai.ts`, with the user's pla
 | DEMO_PASSWORD | Пароль для создаваемых демо-аккаунтов, только seed-demo |
 | DEMO2_EMAIL | Адрес второго аккаунта без анкеты, только seed-demo |
 
-Установить зависимости `pnpm install --frozen-lockfile`. Все запуски Node ниже используют `--use-system-ca`: это позволяет применять системное хранилище доверенных сертификатов, в том числе при ошибке сертификата в Node. Проверка TLS остаётся включённой.
+Установить зависимости `npm ci`, предварительно задав `$env:NODE_OPTIONS='--use-system-ca'` в PowerShell. Все запуски Node ниже используют `--use-system-ca`: это позволяет применять системное хранилище доверенных сертификатов. Проверка TLS остаётся включённой.
 
 Порядок подготовки: **миграции по номерам → seed → ручная проверка видео → seed-demo → dev**. Применённые миграции не запускать повторно. Если 001–005 уже применены, в Supabase SQL Editor выполнить отдельно сначала `006_commerce`, затем `007_demo_seed` из `supabase/migrations` (полные имена приведены в backend-integration.md). Не переносить только новый код без новых миграций. Файлы исполняются как обычный SQL без psql-команд.
 
@@ -120,12 +120,12 @@ QR-токен — HMAC секрета зала и минутного окна. �
 - Оценка калорий по фото приблизительна; проверяется сигнатура файла, а не полное декодирование изображения.
 - **Billing is a demo, everything else is live:** подписка имитирует оплату без списания денег; остальные API используют реальные Auth/БД при настроенном окружении. Partner simulate-purchase создаёт явно демонстрационную продажу с корзиной из economy.ts.
 - Каталог допускается к генерации только после ручной проверки видео и установки verified=true. Исходный seed этого не делает.
-- Формат фактического AI-провайдера требует сверки; локальные HTTP-фейки подтверждают реализацию принятого протокола, а не совместимость провайдера или качество модели.
+- Meta structured output, генерация плана и Coach проверены живыми запросами. Анализ питания через фактическую модель отдельно не проверен; тесты этого маршрута используют HTTP-фейки.
 
 ### Проверки
 
 ```powershell
-node --use-system-ca node_modules/next/dist/bin/next build --webpack
+node --use-system-ca node_modules/next/dist/bin/next build
 node --use-system-ca node_modules/typescript/bin/tsc --noEmit --incremental false
 node --use-system-ca --test
 node --use-system-ca scripts/verification/native-runner.mjs
