@@ -104,7 +104,7 @@ try {
   execute('Schema, security and contract verification', process.execPath, [
     path.join(directory, 'verify.mjs'),
   ], { env, output: true, timeout: 60000 });
-  execute('Concurrent redemption verification', process.execPath, [
+  execute('Concurrent activity and redemption verification', process.execPath, [
     path.join(directory, 'concurrency.mjs'),
   ], { env, output: true, timeout: 60000 });
 } catch (error) {

@@ -41,7 +41,7 @@ try {
   `);
   const migrations = (await readdir(path.join(root, 'supabase/migrations')))
     .filter((name) => name.endsWith('.sql')).sort();
-  assert.equal(migrations.length, 1, 'Review the test when adding another migration.');
+  assert.ok(migrations.length >= 3, 'Activity verification requires all project migrations.');
   for (const name of migrations) {
     await database.exec(await readFile(path.join(root, 'supabase/migrations', name), 'utf8'));
     console.log(`PASS: applied ${name}`);

@@ -28,6 +28,10 @@ begin
 end;
 $$;
 
+-- Migration 002 revokes default function EXECUTE, including for test helpers.
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
 select pg_temp.assert_true((
     select count(*) = 13 and bool_and(relrowsecurity)
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -72,9 +76,8 @@ insert into auth.users (id, email) values
 ('11111111-1111-4111-8111-111111111111', 'sql-check-a@example.invalid'),
 ('22222222-2222-4222-8222-222222222222', 'sql-check-b@example.invalid');
 set local role service_role;
-insert into public.profiles(id) values
-('11111111-1111-4111-8111-111111111111'),
-('22222222-2222-4222-8222-222222222222');
+select pg_temp.assert_true((select count(*) = 2 from public.profiles),
+    'Auth insert automatically creates profiles');
 insert into public.partners(id, name, type, commission_pct, ref_slug) values
 ('33333333-3333-4333-8333-333333333333', 'Verification Partner', 'supplements', 15, 'verification-partner');
 insert into public.gyms(id, name, city, address, qr_secret, partner_id, timezone) values
@@ -221,8 +224,8 @@ select pg_temp.expect_error($$select public.redeem_reward(auth.uid(), '77777777-
     '42501', null, 'authenticated cannot call redeem directly');
 select pg_temp.expect_error($$select qr_secret from public.gyms$$,
     '42501', null, 'gym secret is hidden from authenticated');
-select pg_temp.assert_true((select count(*) = 1 from (select id, name, city, address from public.gyms) safe_gyms),
-    'safe gym fields remain readable');
+select pg_temp.expect_error($$select id, name, city, address from public.gyms$$,
+    '42501', null, 'gym catalog is read through server routes only');
 select pg_temp.expect_error($$select * from public.partner_sales$$,
     '42501', null, 'partner sales are server-only');
 reset role;
@@ -234,6 +237,238 @@ select pg_temp.expect_error($$insert into public.coin_ledger(user_id, amount, re
     '42501', null, 'anon cannot mint coins');
 select pg_temp.expect_error($$select public.redeem_reward('11111111-1111-4111-8111-111111111111', '77777777-7777-4777-8777-777777777777')$$,
     '42501', null, 'anon cannot call redeem');
+reset role;
+
+-- Activity RPC tests use independent fixtures and deterministic server timestamps.
+select pg_temp.assert_true(
+    not has_function_privilege('anon', 'public.record_gym_checkin(uuid,uuid,timestamptz)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.record_gym_checkin(uuid,uuid,timestamptz)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.record_gym_checkin(uuid,uuid,timestamptz)', 'EXECUTE')
+    and not has_function_privilege('anon', 'public.record_workout_session(uuid,uuid,integer,jsonb,timestamptz)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.record_workout_session(uuid,uuid,integer,jsonb,timestamptz)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.record_workout_session(uuid,uuid,integer,jsonb,timestamptz)', 'EXECUTE'),
+    'activity RPC execute is service-role-only'
+);
+select pg_temp.assert_true((
+    select bool_and(not p.prosecdef and 'search_path=""' = any(p.proconfig))
+    from pg_proc p where p.oid in (
+        'public.record_gym_checkin(uuid,uuid,timestamptz)'::regprocedure,
+        'public.record_workout_session(uuid,uuid,integer,jsonb,timestamptz)'::regprocedure
+    )
+), 'activity RPCs use invoker privileges and an empty search path');
+select pg_temp.assert_true((
+    select count(*) = 2 from pg_indexes
+    where schemaname = 'public'
+      and indexname in ('coin_ledger_workout_day_once', 'coin_ledger_weekly_bonus_once')
+), 'explicit daily workout and weekly bonus unique indexes exist');
+
+insert into auth.users(id, email) values
+('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'activity-c@example.invalid'),
+('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'activity-d@example.invalid');
+set local role service_role;
+update public.profiles set timezone = 'Asia/Tokyo', weekdays = array[1,3]
+where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+update public.profiles set timezone = 'America/New_York', weekdays = '{}'
+where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+insert into public.workout_plans(id, user_id, input_snapshot, plan_json) values
+('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '{}',
+ '{"days":[{"weekday":1,"exercises":[{"slug":"test-lift"},{"slug":"test-press"}]},{"weekday":3,"exercises":[{"slug":"test-lift"}]}]}'),
+('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '{}',
+ '{"days":[{"weekday":1,"exercises":[{"slug":"test-lift"}]}]}');
+
+do $$
+declare
+    v_user uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    v_gym uuid := '44444444-4444-4444-8444-444444444444';
+    v_result jsonb;
+begin
+    v_result := public.record_gym_checkin(v_user, v_gym, '2026-11-17T04:59:59Z');
+    perform pg_temp.assert_true(v_result = '{"coins_earned":40,"balance":40}'::jsonb,
+        'first check-in atomically awards 40 coins');
+    v_result := public.record_gym_checkin(v_user, v_gym, '2026-11-17T05:00:00Z');
+    perform pg_temp.assert_true(v_result = '{"coins_earned":40,"balance":80}'::jsonb,
+        'gym local midnight permits the next calendar day check-in');
+    perform pg_temp.assert_true((
+        select array_agg(local_date order by local_date) = array['2026-11-16'::date, '2026-11-17'::date]
+        from public.gym_checkins where user_id = v_user
+    ), 'check-in dates use gym timezone, independently of the profile timezone');
+    perform pg_temp.expect_error(format(
+        'select public.record_gym_checkin(%L,%L,%L)', v_user, v_gym, '2026-11-17T16:00:00Z'
+    ), 'P0001', 'already_checked_in', 'duplicate check-in returns the already_checked_in conflict');
+    perform pg_temp.assert_true(public.coin_balance(v_user) = 80
+        and (select count(*) = 2 from public.gym_checkins where user_id = v_user)
+        and (select count(*) = 2 from public.coin_ledger where user_id = v_user and reason = 'gym_checkin'),
+        'duplicate check-in creates neither a row nor extra coins');
+end;
+$$;
+
+update public.profiles set timezone = 'America/New_York'
+where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+do $$
+declare
+    v_user uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    v_plan uuid := 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    v_log jsonb := '[{"slug":"test-lift","sets":[{"reps":8,"weight_kg":0},{"reps":10,"weight_kg":20}]}]';
+    v_result jsonb;
+    v_count bigint;
+    v_bad jsonb;
+begin
+    v_result := public.record_workout_session(v_user, v_plan, 0, v_log, '2026-11-16T15:00:00Z');
+    perform pg_temp.assert_true(v_result = '{"xp_earned":10,"coins_earned":10,"balance":90}'::jsonb,
+        'first workout awards five XP per set and ten daily coins');
+    v_result := public.record_workout_session(v_user, v_plan, 0, v_log, '2026-11-17T04:59:59Z');
+    perform pg_temp.assert_true((v_result ->> 'coins_earned')::integer = 0
+        and (select count(*) = 2 from public.workout_sessions where user_id = v_user),
+        'second workout on the same profile-local day persists without another daily reward');
+
+    select count(*) into v_count from public.workout_sessions where user_id = v_user;
+    perform pg_temp.expect_error(format(
+        'select public.record_workout_session(%L,%L,0,%L::jsonb,%L)',
+        v_user, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', v_log, '2026-11-18T15:00:00Z'
+    ), 'P0001', 'validation_error', 'RPC rejects a workout using another user plan');
+    perform pg_temp.expect_error(format(
+        'select public.record_workout_session(%L,%L,2,%L::jsonb,%L)',
+        v_user, v_plan, v_log, '2026-11-18T15:00:00Z'
+    ), 'P0001', 'validation_error', 'RPC rejects a day index outside the plan');
+    for v_bad in select value from jsonb_array_elements('[
+      [{"slug":"not-in-plan","sets":[{"reps":8,"weight_kg":0}]}],
+      [{"slug":"test-lift","sets":[{"reps":0,"weight_kg":0}]}],
+      [{"slug":"test-lift","sets":[{"reps":101,"weight_kg":0}]}],
+      [{"slug":"test-lift","sets":[{"reps":1.5,"weight_kg":0}]}],
+      [{"slug":"test-lift","sets":[{"reps":8,"weight_kg":-1}]}],
+      [{"slug":"test-lift","sets":[{"reps":8,"weight_kg":501}]}],
+      [{"slug":"test-lift","sets":[]}],
+      [{"slug":"test-lift","sets":[{"reps":8,"weight_kg":0}]},{"slug":"test-lift","sets":[{"reps":8,"weight_kg":0}]}]
+    ]'::jsonb) loop
+        perform pg_temp.expect_error(format(
+            'select public.record_workout_session(%L,%L,0,%L::jsonb,%L)',
+            v_user, v_plan, v_bad, '2026-11-18T15:00:00Z'
+        ), 'P0001', 'validation_error', 'RPC rejects an invalid exercise log');
+    end loop;
+    perform pg_temp.assert_true((select count(*) = v_count from public.workout_sessions where user_id = v_user)
+        and public.coin_balance(v_user) = 90, 'invalid workout requests leave sessions and ledger unchanged');
+
+    v_result := public.record_workout_session(v_user, v_plan, 1, v_log, '2026-11-18T15:00:00Z');
+    perform pg_temp.assert_true(v_result = '{"xp_earned":10,"coins_earned":60,"balance":150}'::jsonb,
+        'completing every scheduled weekday awards the daily reward and weekly bonus atomically');
+    v_result := public.record_workout_session(v_user, v_plan, 1, v_log, '2026-11-18T16:00:00Z');
+    perform pg_temp.assert_true((v_result ->> 'coins_earned')::integer = 0
+        and (select count(*) = 1 from public.coin_ledger where user_id = v_user and reason = 'weekly_bonus')
+        and (select ref_id = '2026-11-16' from public.coin_ledger where user_id = v_user and reason = 'weekly_bonus'),
+        'another completed workout cannot repeat the ISO-week bonus');
+    v_result := public.record_workout_session(v_user, v_plan, 0, v_log, '2026-11-23T15:00:00Z');
+    perform pg_temp.assert_true((v_result ->> 'coins_earned')::integer = 10
+        and (select count(*) = 1 from public.coin_ledger where user_id = v_user and reason = 'weekly_bonus'),
+        'a new ISO week does not inherit completion from the previous week');
+
+    v_result := public.record_workout_session('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 0, v_log, '2026-11-16T15:00:00Z');
+    perform pg_temp.assert_true((v_result ->> 'coins_earned')::integer = 10
+        and not exists (select 1 from public.coin_ledger where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and reason = 'weekly_bonus'),
+        'an empty schedule cannot earn a weekly bonus');
+end;
+$$;
+
+-- Enforce workload boundaries in SQL as well as in the API validation module.
+update public.workout_plans
+set plan_json = jsonb_build_object('days', jsonb_build_array(jsonb_build_object(
+    'weekday', 1, 'exercises', (select jsonb_agg(jsonb_build_object('slug', 'test-' || i)) from generate_series(1,21) i)
+))) where id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+do $$
+declare
+    v_user uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    v_plan uuid := 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    v_log jsonb;
+    v_sets jsonb;
+    v_result jsonb;
+begin
+    select jsonb_agg(jsonb_build_object('reps', 100, 'weight_kg', 500)) into v_sets from generate_series(1,10);
+    select jsonb_agg(jsonb_build_object('slug', 'test-' || i, 'sets', v_sets)) into v_log from generate_series(1,6) i;
+    v_result := public.record_workout_session(v_user, v_plan, 0, v_log, '2026-11-16T18:00:00Z');
+    perform pg_temp.assert_true((v_result ->> 'xp_earned')::integer = 100
+        and (v_result ->> 'coins_earned')::integer = 0,
+        'sixty valid sets reach the XP cap without repeating daily or weekly coins');
+    v_log := v_log || jsonb_build_array(jsonb_build_object('slug', 'test-7', 'sets', jsonb_build_array(jsonb_build_object('reps', 1, 'weight_kg', 0))));
+    perform pg_temp.expect_error(format('select public.record_workout_session(%L,%L,0,%L::jsonb)', v_user, v_plan, v_log),
+        'P0001', 'validation_error', 'sixty-one total sets are rejected');
+    v_log := jsonb_build_array(jsonb_build_object('slug', 'test-1', 'sets', v_sets || jsonb_build_array(v_sets -> 0)));
+    perform pg_temp.expect_error(format('select public.record_workout_session(%L,%L,0,%L::jsonb)', v_user, v_plan, v_log),
+        'P0001', 'validation_error', 'eleven sets for one exercise are rejected');
+    select jsonb_agg(jsonb_build_object('slug', 'test-' || i, 'sets', jsonb_build_array(jsonb_build_object('reps', 1, 'weight_kg', 0))))
+    into v_log from generate_series(1,21) i;
+    perform pg_temp.expect_error(format('select public.record_workout_session(%L,%L,0,%L::jsonb)', v_user, v_plan, v_log),
+        'P0001', 'validation_error', 'twenty-one exercises are rejected');
+end;
+$$;
+reset role;
+
+-- Any failure during ledger insertion must roll back the activity row as well.
+create function pg_temp.reject_activity_credit() returns trigger language plpgsql as $$
+begin
+    if new.reason in ('gym_checkin', 'workout_session', 'weekly_bonus') then
+        raise exception using errcode = 'P7778', message = 'Injected activity ledger failure.';
+    end if;
+    return new;
+end;
+$$;
+create trigger verification_reject_activity_credit before insert on public.coin_ledger
+for each row execute function pg_temp.reject_activity_credit();
+set local role service_role;
+select pg_temp.expect_error(
+    $$select public.record_gym_checkin('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','2026-11-20T15:00:00Z')$$,
+    'P7778', 'Injected activity ledger failure.', 'check-in ledger failure propagates');
+select pg_temp.assert_true(not exists (
+    select 1 from public.gym_checkins where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+), 'failed check-in reward rolls back its check-in row');
+select pg_temp.expect_error(
+    $$select public.record_workout_session('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd',0,
+      '[{"slug":"test-lift","sets":[{"reps":8,"weight_kg":0}]}]','2026-11-20T15:00:00Z')$$,
+    'P7778', 'Injected activity ledger failure.', 'workout ledger failure propagates');
+select pg_temp.assert_true((select count(*) = 1 from public.workout_sessions where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+    and public.coin_balance('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb') = 10,
+    'failed workout reward rolls back its session and all coins');
+reset role;
+drop trigger verification_reject_activity_credit on public.coin_ledger;
+
+create or replace function pg_temp.reject_activity_credit() returns trigger language plpgsql as $$
+begin
+    if new.reason = 'weekly_bonus' then
+        raise exception using errcode = 'P7778', message = 'Injected weekly bonus failure.';
+    end if;
+    return new;
+end;
+$$;
+create trigger verification_reject_activity_credit before insert on public.coin_ledger
+for each row execute function pg_temp.reject_activity_credit();
+set local role service_role;
+select pg_temp.expect_error(
+    $$select public.record_workout_session('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','cccccccc-cccc-4ccc-8ccc-cccccccccccc',0,
+      '[{"slug":"test-1","sets":[{"reps":8,"weight_kg":0}]}]','2026-11-25T15:00:00Z')$$,
+    'P7778', 'Injected weekly bonus failure.', 'late weekly bonus failure propagates');
+select pg_temp.assert_true(public.coin_balance('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') = 160
+    and not exists (select 1 from public.workout_sessions where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and local_date = '2026-11-25')
+    and not exists (select 1 from public.coin_ledger where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and ref_id in ('2026-11-23','2026-11-25') and reason = 'weekly_bonus')
+    and not exists (select 1 from public.coin_ledger where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and ref_id = '2026-11-25' and reason = 'workout_session'),
+    'weekly bonus failure rolls back the preceding session and daily reward');
+reset role;
+drop trigger verification_reject_activity_credit on public.coin_ledger;
+
+set local role authenticated;
+select pg_temp.expect_error(
+    $$select public.record_gym_checkin(auth.uid(),'44444444-4444-4444-8444-444444444444')$$,
+    '42501', null, 'authenticated cannot execute check-in RPC');
+select pg_temp.expect_error(
+    $$select public.record_workout_session(auth.uid(),'cccccccc-cccc-4ccc-8ccc-cccccccccccc',0,'[]')$$,
+    '42501', null, 'authenticated cannot execute workout RPC');
+reset role;
+set local role anon;
+select pg_temp.expect_error(
+    $$select public.record_gym_checkin('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444')$$,
+    '42501', null, 'anon cannot execute check-in RPC');
+select pg_temp.expect_error(
+    $$select public.record_workout_session('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','cccccccc-cccc-4ccc-8ccc-cccccccccccc',0,'[]')$$,
+    '42501', null, 'anon cannot execute workout RPC');
 reset role;
 rollback;
 

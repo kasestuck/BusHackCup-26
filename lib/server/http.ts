@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isAuthError, type SupabaseClient, type User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { ZodType } from "zod";
 import {
   ApiErrorResponseSchema,
@@ -8,7 +8,7 @@ import {
   type ApiError,
   type ApiErrorResponse,
 } from "./contract.ts";
-import { createSessionClient, MissingSessionError } from "./supabase.ts";
+import { createBearerClient, createSessionClient, MissingSessionError, ServerConfigurationError } from "./supabase.ts";
 
 type ErrorCode = ApiError["error"]["code"];
 
@@ -38,6 +38,7 @@ type AuthenticatedHandler = (
 
 type AuthDependencies = {
   createClient?: () => Promise<SupabaseClient>;
+  createBearerClient?: (token: string) => SupabaseClient | Promise<SupabaseClient>;
 };
 
 function responseHeaders(initial?: HeadersInit): Headers {
@@ -45,22 +46,21 @@ function responseHeaders(initial?: HeadersInit): Headers {
   headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
   headers.set("Expires", "0");
   headers.set("Pragma", "no-cache");
-  const vary = headers.get("Vary");
-  if (!vary?.split(",").some((value) => value.trim().toLowerCase() === "cookie")) {
-    headers.set("Vary", vary ? `${vary}, Cookie` : "Cookie");
+  for (const name of ["Cookie", "Authorization"]) {
+    const vary = headers.get("Vary");
+    if (!vary?.split(",").some((value) => value.trim().toLowerCase() === name.toLowerCase())) {
+      headers.set("Vary", vary ? `${vary}, ${name}` : name);
+    }
   }
   return headers;
 }
 
-function unauthorizedAuthError(error: unknown): boolean {
-  return isAuthError(error)
-    && typeof error.status === "number"
-    && error.status >= 400
-    && error.status < 500
-    && error.status !== 429;
-}
-
 function logUnexpectedError(error: unknown): void {
+  if (error instanceof ServerConfigurationError) {
+    // This message contains validated environment variable names, never their values.
+    console.error("SERVER CONFIGURATION ERROR:", error.message);
+    return;
+  }
   // Do not log arbitrary provider messages, SQL details, request data, tokens or headers.
   const fields = error && typeof error === "object" ? error as Record<string, unknown> : {};
   const name = error instanceof Error ? error.constructor.name : "UnknownError";
@@ -75,7 +75,7 @@ export function handleError(error: unknown): Response {
   let failure: HttpError;
   if (error instanceof HttpError) {
     failure = error;
-  } else if (error instanceof MissingSessionError || unauthorizedAuthError(error)) {
+  } else if (error instanceof MissingSessionError) {
     failure = new HttpError(401, "unauthorized");
   } else {
     logUnexpectedError(error);
@@ -87,16 +87,37 @@ export function handleError(error: unknown): Response {
   });
 }
 
+async function authenticate(request: Request, dependencies: AuthDependencies): Promise<AuthenticatedContext> {
+  // Cookie identity takes precedence when both credentials are supplied.
+  try {
+    const supabase = await (dependencies.createClient ?? createSessionClient)();
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) return { user: data.user, supabase };
+  } catch (error) {
+    if (error instanceof ServerConfigurationError) throw error;
+    // Malformed cookie decoding, expired sessions and failed verification fail closed.
+  }
+
+  const authorization = request.headers.get("Authorization");
+  const token = authorization?.match(/^Bearer[\t ]+([^\s,]+)$/i)?.[1];
+  if (!token) throw new HttpError(401, "unauthorized");
+
+  try {
+    const supabase = await (dependencies.createBearerClient ?? createBearerClient)(token);
+    const { data, error } = await supabase.auth.getUser(token);
+    if (!error && data.user) return { user: data.user, supabase };
+  } catch (error) {
+    if (error instanceof ServerConfigurationError) throw error;
+  }
+  throw new HttpError(401, "unauthorized");
+}
+
 /** Authorization always comes from a verified Auth server response, never cookie contents. */
 export function withAuth(handler: AuthenticatedHandler, dependencies: AuthDependencies = {}) {
   return async (request: Request): Promise<Response> => {
     try {
-      const supabase = await (dependencies.createClient ?? createSessionClient)();
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      if (!data.user) throw new HttpError(401, "unauthorized");
-
-      const response = await handler(request, { user: data.user, supabase });
+      const context = await authenticate(request, dependencies);
+      const response = await handler(request, context);
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

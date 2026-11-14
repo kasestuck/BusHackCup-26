@@ -9,7 +9,7 @@ export function verifyContract(c) {
     weekdays: [1], equipment: ['full_gym'], age: 30,
   };
   const profile = {
-    ...questionnaire, id, display_name: '', home_gym_id: null, is_pro: false,
+    ...questionnaire, id, display_name: '', home_gym_id: null, is_pro: false, timezone: 'America/New_York',
   };
   const plan = {
     id, title: 'Strength Foundations', summary: 'One training day',
@@ -34,7 +34,7 @@ export function verifyContract(c) {
     redeem: [{ reward_id: id }, { pro_until: timestamp, balance: 0 }],
     subscribe: [{ plan: 'pro_monthly' }, { is_pro: true, pro_until: timestamp }],
     nutrition: [{ image: new File(['test-only'], 'sample.jpg', { type: 'image/jpeg' }) },
-      { items: [{ name: 'Food', grams_estimate: 100, ...macros }], totals: macros }],
+      { items: [{ name: 'Food', grams_estimate: 100, ...macros }], totals: macros, confidence: 'low', disclaimer: 'Approximate estimate.' }],
     partnerStats: [{ query: { partner_id: id } }, { sales_count: 1, revenue_cents: 1000, commission_cents: 150 }],
   };
   assert.equal(Object.keys(c.EndpointContracts).length, 13);
@@ -45,13 +45,14 @@ export function verifyContract(c) {
     endpoint.request.parse(sample[0]);
     endpoint.success.parse(sample[1]);
     endpoint.error.parse({ status: 401, body: { error: { code: 'unauthorized', message: 'Sign in to continue.' } } });
+    endpoint.error.parse({ status: 500, body: { error: { code: 'internal_error', message: 'An unexpected error occurred.' } } });
     assert.equal(endpoint.success.safeParse({ ...sample[1], unexpected: true }).success, false);
     console.log(`PASS: ${endpoint.method} ${endpoint.path} request, success and error examples`);
   }
   const errorExamples = [
     [401, 'unauthorized'], [402, 'not_enough_coins'], [402, 'pro_required'],
     [404, 'plan_not_found'], [409, 'already_checked_in'],
-    [422, 'validation_error'], [429, 'rate_limited'],
+    [422, 'validation_error'], [429, 'rate_limited'], [500, 'internal_error'], [404, 'gym_not_found'],
   ];
   for (const [status, code] of errorExamples) {
     c.ApiErrorResponseSchema.parse({ status, body: { error: { code, message: c.ErrorMessageExamples[code] } } });
@@ -69,8 +70,9 @@ export function verifyContract(c) {
   c.planSchemaFor(questionnaire, new Set(['goblet-squat'])).parse(plan);
   assert.equal(c.planSchemaFor(questionnaire, new Set()).safeParse(plan).success, false);
   assert.equal(c.planSchemaFor({ ...questionnaire, weekdays: [2] }, new Set(['goblet-squat'])).safeParse(plan).success, false);
-  const extendedNutrition = { ...samples.nutrition[1], confidence: 'low', disclaimer: 'Approximate estimate.' };
-  assert.equal(c.NutritionSuccessSchema.safeParse(extendedNutrition).success, false);
-  c.ProposedNutritionSuccessSchema.parse(extendedNutrition);
-  console.log('PASS: status mapping, privilege fields, invalid inputs, plan links and explicit nutrition extension');
+  const { confidence, disclaimer, ...incompleteNutrition } = samples.nutrition[1];
+  assert.equal(c.NutritionSuccessSchema.safeParse(incompleteNutrition).success, false);
+  c.GymQrTokenErrorResponseSchema.parse({ status: 404, body: { error: { code: 'gym_not_found', message: c.ErrorMessageExamples.gym_not_found } } });
+  c.GymQrTokenErrorResponseSchema.parse({ status: 429, body: { error: { code: 'rate_limited', message: c.ErrorMessageExamples.rate_limited } } });
+  console.log('PASS: status mapping, privilege fields, invalid inputs, plan links, required nutrition fields and QR errors');
 }
