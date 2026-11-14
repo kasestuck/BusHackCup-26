@@ -9,7 +9,7 @@ Hackathon project for Business Cup 2.0. Full product and technical spec: [docs/S
 ```bash
 npm install
 cp .env.example .env.local   # NEXT_PUBLIC_USE_MOCKS=true until the backend is ready
-npm run dev                  # http://localhost:3000 → /dashboard
+npm run dev                  # http://localhost:3000 (landing) · /dashboard (app)
 ```
 
 Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.

@@ -1,9 +1,43 @@
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { LandingNav } from "@/components/landing/landing-nav";
+import {
+  FinalCta,
+  Hero,
+  HowItWorks,
+  LandingFooter,
+  Pricing,
+  Problem,
+  Rewards,
+  Trust,
+} from "@/components/landing/sections";
 
-// Pure redirect, nothing to validate for instant navigation.
-export const instant = false;
+export const metadata: Metadata = {
+  title: { absolute: "ShowUp — You pay for the gym. We make sure you actually go." },
+  description:
+    "AI workout plans built around your week, and coins for every verified gym visit. Spend them on Pro or partner discounts.",
+};
 
-// The landing page is a later phase; until then `/` opens the dashboard.
-export default function Home() {
-  redirect("/dashboard");
+/** Public landing page: fully static, no API calls. */
+export default function LandingPage() {
+  return (
+    <>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-lime focus:px-4 focus:py-2 focus:text-lime-ink"
+      >
+        Skip to content
+      </a>
+      <LandingNav />
+      <main id="main">
+        <Hero />
+        <Problem />
+        <HowItWorks />
+        <Rewards />
+        <Trust />
+        <Pricing />
+        <FinalCta />
+      </main>
+      <LandingFooter />
+    </>
+  );
 }
