@@ -127,15 +127,16 @@ export function PaywallView() {
                 </ButtonLink>
                 <p className="text-sm text-subtle">Demo billing: no real charge.</p>
               </div>
-              <EarnItCard balance={me.data.coins_balance} />
             </div>
           )}
         </div>
 
-        <div className="rise lg:col-span-6 lg:pt-6" style={{ ["--d" as string]: "120ms" }}>
+        {/* Comparison first, then the coins alternative right under it (not shown to Pro users). */}
+        <div className="rise space-y-4 lg:col-span-6 lg:pt-6" style={{ ["--d" as string]: "120ms" }}>
           <Card className="p-5 sm:p-7">
             <PlanComparison />
           </Card>
+          {!isPro && <EarnItCard balance={me.data.coins_balance} />}
         </div>
       </div>
     </Frame>
