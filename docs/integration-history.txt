@@ -1,0 +1,40 @@
+* 292205a feat: add transactional commerce and idempotent demo accounts
+* e807ad2 feat: extend commerce and QR error contracts
+* d5dd7d6 fix: preserve generation quota before AI and cap request budgets
+* 15a808b feat: add validated AI plans and nutrition with atomic generation quotas
+* 6f23e30 feat: extend plan and nutrition error contracts
+* e7f0c17 feat: add atomic activity rewards and public gym QR tokens
+* 18dc37c feat: extend QR error contract without changing request shapes
+* 3ab2f2e feat: add authenticated backend foundation and catalog endpoints
+* a2de895 chore: preserve existing Supabase assets and verification tools
+* e9a743d feat: freeze contract-v1 draft with internal errors
+* d83e28e fix(shell): nav labels never wrap; Profile nav item only from 2xl (avatar covers it)
+* 256bfc6 feat(shell): always-visible Check in button; header fits 375–1440px (lg nav breakpoint, compact mark on phones)
+* f2b2cc1 fix(layout): suppress extension-caused <html> attribute hydration warning
+* 0b3b156 fix(pro): move the earn-with-coins card under the Free vs Pro table
+* 3574bb4 feat(coach): AI Coach chat page, Coach in navigation, coach section on landing
+* b4e706a client: AI Coach chat helpers, proposed /api/assistant schemas (outside lib/contract) and mock replies
+* 3711389 fix(plan): exercise details as a spec list, no column overflow, fade-in reveal instead of slide
+* 9792a2b fix(dashboard): equal-height schedule and rewards cards, wrap day and reward titles, show day's exercises
+* 684098b feat(auth): one-click guest access (Supabase anonymous sign-in) on log in and sign up
+* a4bcdaf feat(profile): profile screen with training details, membership and account; drop placeholder component
+* 8270a33 feat(onboarding): prefill answers from the saved profile when updating
+* e10641d feat(auth): log in, sign up, magic link callback, sign out and next-aware sign-in links
+* a6b2c0c client: Supabase browser auth with cookie session, mock mode and safe redirects
+* 129ce4f chore(deps): add @supabase/supabase-js 2.119.0 and @supabase/ssr 0.12.7 for browser auth (approved)
+* ab9cedb feat(partner): live partner dashboard with commission, revenue and orders
+* c0068f2 client: partner stats math (cents, AOV, rate) and seeded partner mock
+* 91d2218 feat(nutrition): photo meal analysis for Pro with approximate macros and Pro gate
+* 4bca9c9 client: nutrition helpers, photo downscaling and Pro-gated analyze mock
+* 0addd93 feat(landing): pitch landing page and plain-language Privacy page
+* cf90d61 feat(pro): paywall with Free vs Pro and demo checkout ("Demo mode: no real charge")
+* d85d5e2 client: demo checkout input formatting and billing subscribe mock
+* aec6ad1 feat(rewards): coin marketplace with Pro feature card, partner codes and redeem dialog
+* aa4bf87 client: rewards helpers, redeem mock, rich scenario and one-shot ?mock=reset
+* f836aef client: refetch mounted queries in the background after invalidateApi()
+* 7c469b8 feat(checkin): user check-in with streak and coins, gym screen with rotating QR
+* 8f5f4b9 client: check-in link format, code parsing and gym/QR/check-in mocks
+* c34ff3f chore(deps): add uqr 0.1.3 for the gym check-in QR (approved; MIT, zero deps)
+* d487d0e feat(workout): session logging with rest timer, saved draft and XP/coins result
+* 51ef192 client: workout log model (lb to kg, completed sets only) and sessions mock
+* 7a7fb93 fix(shell): wrap active-nav usePathname in Suspense so dynamic routes prerender

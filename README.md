@@ -46,6 +46,8 @@ agrees and implements it (model call via `lib/server/ai.ts`, with the user's pla
 
 ## Backend
 
+**Integration is blocked:** the frontend and backend contracts contain incompatible fields. The instructions below describe the original BACK branch, not a verified integration build. See [integration status](docs/integration-status.md) and the [conditional hosting guide](docs/hosting-vercel.md) before installing dependencies or deploying. The frontend uses npm and Turbopack; the approved no-video mode is still pending.
+
 Сервер — Next.js App Router, TypeScript, Zod и Supabase. Требуются Node.js 22.19+ (проверено 24.22.1) и pnpm 11.25.0. Каркас вынесен в отдельный коммит `fbc5138` с сообщением `chore: throwaway scaffold (do not merge)`; backend можно перенести в общий проект отдельно от него.
 
 ### Запуск
