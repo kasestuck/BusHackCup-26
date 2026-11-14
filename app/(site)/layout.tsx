@@ -26,7 +26,9 @@ export const viewport: Viewport = {
 /** Root layout for all pages. `app/api/**` (backend) needs no layout. */
 export default function SiteRootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} antialiased`}>
+    // Browser extensions (dark mode, translators, password managers) often add classes to <html>
+    // before React loads; this silences that one-element attribute mismatch only.
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} antialiased`} suppressHydrationWarning>
       <body className="min-h-dvh">{children}</body>
     </html>
   );
