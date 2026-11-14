@@ -8,11 +8,12 @@ import type {
   Injury,
   InjuryArea,
   OnboardingRequest,
+  Profile,
   SessionMinutes,
   Weekday,
   WorkoutType,
 } from "@/lib/contract";
-import { ftInToCm, lbToKg } from "./units.ts";
+import { cmToFtIn, ftInToCm, kgToLb, lbToKg } from "./units.ts";
 
 export type InjuryDraft = { key: string; area: InjuryArea | null; when: string; status: Injury["status"] | null };
 
@@ -138,5 +139,25 @@ export function toOnboardingRequest(d: OnboardingDraft): OnboardingRequest {
     equipment: d.equipment,
     session_minutes: d.sessionMinutes!,
     weekdays: [...d.weekdays].sort((a, b) => a - b),
+  };
+}
+
+/**
+ * Prefill the questionnaire from a saved profile (SPEC §3 #11: update answers, then regenerate).
+ * Age and equipment aren't in `profiles` yet, so they stay empty and the user re-enters them.
+ */
+export function profileToDraft(p: Profile): OnboardingDraft {
+  const h = p.height_cm ? cmToFtIn(p.height_cm) : null;
+  return {
+    ...EMPTY_DRAFT,
+    heightFt: h ? String(h.ft) : "",
+    heightIn: h ? String(h.in) : "",
+    weightLb: p.weight_kg ? String(kgToLb(p.weight_kg)) : "",
+    hasInjuries: p.injuries.length > 0 ? true : p.goal ? false : null,
+    injuries: p.injuries.map((i, n) => ({ key: `saved-${n}`, area: i.area, when: i.when, status: i.status })),
+    goal: p.goal,
+    workoutTypes: [...p.workout_types],
+    sessionMinutes: p.session_minutes,
+    weekdays: [...p.weekdays],
   };
 }

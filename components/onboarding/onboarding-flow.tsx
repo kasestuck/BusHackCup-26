@@ -22,8 +22,9 @@ import { SignInButton } from "@/components/auth/sign-in";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function OnboardingFlow() {
-  const [draft, setDraft] = useState<OnboardingDraft>(EMPTY_DRAFT);
+/** `initialDraft` prefills answers when updating an existing profile. */
+export function OnboardingFlow({ initialDraft = EMPTY_DRAFT }: { initialDraft?: OnboardingDraft }) {
+  const [draft, setDraft] = useState<OnboardingDraft>(initialDraft);
   const [index, setIndex] = useState(0);
   const [attempted, setAttempted] = useState<Partial<Record<StepId, boolean>>>({});
   const [returnToReview, setReturnToReview] = useState(false);

@@ -4,6 +4,7 @@ import { cmToFtIn, ftInToCm, kgToLb, lbToKg } from "./units.ts";
 import {
   EMPTY_DRAFT,
   type OnboardingDraft,
+  profileToDraft,
   toOnboardingRequest,
   toggleEquipment,
   validateStep,
@@ -67,4 +68,31 @@ test("toOnboardingRequest converts to metric and sorts weekdays", () => {
     weekdays: [1, 3, 5],
   });
   assert.deepEqual(toOnboardingRequest({ ...filled, hasInjuries: false }).injuries, []);
+});
+
+test("profileToDraft converts metric back to US units and keeps answers", () => {
+  const d = profileToDraft({
+    id: "u",
+    display_name: null,
+    height_cm: 177.8,
+    weight_kg: 81.6,
+    goal: "get_stronger",
+    workout_types: ["gym_strength"],
+    session_minutes: 45,
+    weekdays: [1, 3, 5],
+    injuries: [{ area: "knee", when: "2 years ago", status: "recovered" }],
+    home_gym_id: null,
+    is_pro: false,
+  });
+  assert.equal(d.heightFt, "5");
+  assert.equal(d.heightIn, "10");
+  assert.equal(d.weightLb, "180");
+  assert.equal(d.hasInjuries, true);
+  assert.equal(d.injuries[0].area, "knee");
+  assert.equal(d.age, "");
+  assert.deepEqual(d.equipment, []);
+  // A complete draft except age + equipment: those steps must still be answered.
+  assert.ok(validateStep("basics", d).age);
+  assert.ok(validateStep("equipment", d).equipment);
+  assert.deepEqual(validateStep("goal", d), {});
 });

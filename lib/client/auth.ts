@@ -153,3 +153,14 @@ export async function signOut(): Promise<AuthResult> {
     return fail(e);
   }
 }
+
+/** Email of the signed-in account, for display. null when signed out or unknown. */
+export async function getAccountEmail(): Promise<string | null> {
+  if (AUTH_MODE !== "supabase") return null;
+  try {
+    const { data } = await supabase().auth.getUser();
+    return data.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
