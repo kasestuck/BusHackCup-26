@@ -822,3 +822,318 @@ select pg_temp.expect_error(
     '42501', null, 'authenticated cannot persist an unmetered fallback');
 reset role;
 rollback;
+
+
+-- Migration 006 additions. All earlier assertions remain unchanged.
+begin;
+create function pg_temp.assert_true(p_condition boolean, p_label text)
+returns void language plpgsql as $$
+begin
+    if p_condition is distinct from true then raise exception 'FAIL: %', p_label; end if;
+    raise notice 'PASS: %', p_label;
+end;
+$$;
+create function pg_temp.expect_error(p_sql text, p_state text, p_message text, p_label text)
+returns void language plpgsql as $$
+declare v_state text; v_message text;
+begin
+    begin execute p_sql;
+    exception when others then get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    end;
+    perform pg_temp.assert_true(v_state = p_state and (p_message is null or v_message = p_message), p_label);
+end;
+$$;
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
+do $$
+declare v_signature text;
+begin
+    foreach v_signature in array array[
+        'public.redeem_reward(uuid,uuid,text[])', 'public.mock_subscribe(uuid)',
+        'public.simulate_partner_purchase(uuid,uuid,integer)', 'public.partner_stats(uuid)'
+    ] loop
+        perform pg_temp.assert_true(
+            not has_function_privilege('anon', v_signature, 'EXECUTE')
+            and not has_function_privilege('authenticated', v_signature, 'EXECUTE')
+            and has_function_privilege('service_role', v_signature, 'EXECUTE')
+            and not exists (
+                select 1 from pg_proc p, lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+                where p.oid = v_signature::regprocedure and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+            ), v_signature || ' executes only for service role');
+        perform pg_temp.assert_true((select not prosecdef and 'search_path=""' = any(proconfig)
+            from pg_proc where oid = v_signature::regprocedure),
+            v_signature || ' is invoker with an empty search_path');
+    end loop;
+end;
+$$;
+
+insert into auth.users(id) values
+('a6111111-1111-4111-8111-111111111111'),
+('a6222222-2222-4222-8222-222222222222'),
+('a6333333-3333-4333-8333-333333333333'),
+('a6444444-4444-4444-8444-444444444444'),
+('a6555555-5555-4555-8555-555555555555');
+set local role service_role;
+insert into public.partners(id,name,type,commission_pct,ref_slug) values
+('b6111111-1111-4111-8111-111111111111','Commerce fixture','supplements',15,'commerce-fixture');
+insert into public.rewards(id,kind,title,cost_coins,partner_id,discount_pct) values
+('c6111111-1111-4111-8111-111111111111','pro_month','Commerce pro',100,null,null),
+('c6222222-2222-4222-8222-222222222222','partner_product','Commerce discount',100,'b6111111-1111-4111-8111-111111111111',15);
+insert into public.rewards(id,kind,title,cost_coins,active) values
+('c6333333-3333-4333-8333-333333333333','pro_month','Inactive commerce pro',100,false);
+insert into public.coin_ledger(user_id,amount,reason) values
+('a6111111-1111-4111-8111-111111111111',1000,'commerce_fixture'),
+('a6222222-2222-4222-8222-222222222222',99,'commerce_fixture'),
+('a6333333-3333-4333-8333-333333333333',100,'commerce_fixture'),
+('a6444444-4444-4444-8444-444444444444',77,'commerce_fixture'),
+('a6555555-5555-4555-8555-555555555555',123,'commerce_fixture');
+
+select pg_temp.assert_true(public.partner_stats('b6111111-1111-4111-8111-111111111111') =
+    '{"sales_count":0,"revenue_cents":0,"commission_cents":0}'::jsonb,
+    'partner stats returns zero totals before sales');
+select pg_temp.expect_error($q$select public.partner_stats('b6999999-9999-4999-8999-999999999999')$q$,
+    'P0001','partner_not_found','unknown partner stats is explicitly not found');
+select pg_temp.expect_error($q$select public.redeem_reward('a6111111-1111-4111-8111-111111111111',
+    'c6999999-9999-4999-8999-999999999999',array[]::text[])$q$,
+    'P0001','reward_not_found','unknown reward differs from inactive reward');
+select pg_temp.expect_error($q$select public.redeem_reward('a6111111-1111-4111-8111-111111111111',
+    'c6333333-3333-4333-8333-333333333333',array[]::text[])$q$,
+    'P0001','reward_inactive','inactive reward has its own error');
+
+do $$
+declare v_message text; v_detail text; v_result jsonb; v_before timestamptz; v_after timestamptz;
+begin
+    begin
+        perform public.redeem_reward('a6222222-2222-4222-8222-222222222222',
+            'c6111111-1111-4111-8111-111111111111', array[]::text[]);
+    exception when sqlstate 'P0001' then
+        get stacked diagnostics v_message = message_text, v_detail = pg_exception_detail;
+    end;
+    perform pg_temp.assert_true(v_message = 'not_enough_coins' and v_detail = '1'
+        and public.coin_balance('a6222222-2222-4222-8222-222222222222') = 99
+        and not exists(select 1 from public.redemptions where user_id = 'a6222222-2222-4222-8222-222222222222'),
+        'one-coin shortfall is reported exactly and creates no debit or redemption');
+    v_result := public.redeem_reward('a6333333-3333-4333-8333-333333333333',
+        'c6111111-1111-4111-8111-111111111111', array[]::text[]);
+    perform pg_temp.assert_true((v_result->>'balance')::bigint = 0
+        and public.coin_balance('a6333333-3333-4333-8333-333333333333') = 0
+        and (select source = 'coin_redemption' from public.subscriptions where user_id = 'a6333333-3333-4333-8333-333333333333'),
+        'HTTP redemption spends the exact balance and records coin_redemption source');
+    insert into public.subscriptions(user_id,plan,source,status,current_period_end)
+    values ('a6111111-1111-4111-8111-111111111111','pro_monthly','fixture','active','2077-01-01T00:00:00Z');
+    v_result := public.redeem_reward('a6111111-1111-4111-8111-111111111111',
+        'c6111111-1111-4111-8111-111111111111', array[]::text[]);
+    perform pg_temp.assert_true((v_result->>'pro_until')::timestamptz = '2077-01-31T00:00:00Z'::timestamptz
+        and (select count(*) = 1 from public.subscriptions where user_id = 'a6111111-1111-4111-8111-111111111111'),
+        'Pro redemption extends an active subscription from its end with a single subscription row');
+    v_result := public.mock_subscribe('a6111111-1111-4111-8111-111111111111');
+    perform pg_temp.assert_true(v_result->>'is_pro' = 'true'
+        and (v_result->>'pro_until')::timestamptz = '2077-01-31T00:00:00Z'::timestamptz
+        and (select source = 'coin_redemption' from public.subscriptions where user_id = 'a6111111-1111-4111-8111-111111111111'),
+        'mock subscribe never extends or replaces an already active subscription');
+    v_before := clock_timestamp();
+    v_result := public.mock_subscribe('a6222222-2222-4222-8222-222222222222');
+    v_after := clock_timestamp();
+    perform pg_temp.assert_true((v_result->>'pro_until')::timestamptz between v_before + interval '30 days' and v_after + interval '30 days'
+        and (select source = 'mock_payment' from public.subscriptions where user_id = 'a6222222-2222-4222-8222-222222222222')
+        and public.mock_subscribe('a6222222-2222-4222-8222-222222222222') = v_result,
+        'mock subscribe creates thirty days and repeated clicks return the same end');
+end;
+$$;
+
+do $$
+declare
+    v_user uuid := 'a6111111-1111-4111-8111-111111111111';
+    v_reward uuid := 'c6222222-2222-4222-8222-222222222222';
+    v_result jsonb; v_redemption uuid; v_balance bigint;
+begin
+    v_result := public.redeem_reward(v_user,v_reward,array['SHOWUP-AAAAAA']);
+    perform pg_temp.assert_true(v_result->>'promo_code' = 'SHOWUP-AAAAAA',
+        'partner redemption uses the supplied six-character random candidate');
+    v_result := public.redeem_reward(v_user,v_reward,array['SHOWUP-AAAAAA','SHOWUP-BBBBBB']);
+    perform pg_temp.assert_true(v_result->>'promo_code' = 'SHOWUP-BBBBBB'
+        and (select count(*) = 2 from public.redemptions where user_id=v_user and reward_id=v_reward),
+        'promo collision retries another candidate inside the transaction without extra rows');
+    v_balance := public.coin_balance(v_user);
+    perform pg_temp.expect_error(format('select public.redeem_reward(%L,%L,array[%L])',v_user,v_reward,'SHOWUP-AAAAAA'),
+        'P0001','promo_code_exhausted','an exhausted promo pool fails explicitly');
+    perform pg_temp.assert_true(public.coin_balance(v_user) = v_balance
+        and (select count(*) = 2 from public.redemptions where user_id=v_user and reward_id=v_reward),
+        'promo exhaustion leaves the balance and redemptions unchanged');
+    perform pg_temp.expect_error(format('select public.redeem_reward(%L,%L,array[%L])',v_user,v_reward,'SHOWUP-0O1IAA'),
+        'P0001','validation_error','ambiguous promo characters are rejected before writing');
+    select id into v_redemption from public.redemptions where user_id=v_user and promo_code='SHOWUP-AAAAAA';
+    perform pg_temp.expect_error(format('select public.simulate_partner_purchase(%L,%L,4000)',
+        'a6222222-2222-4222-8222-222222222222',v_redemption),
+        'P0001','redemption_not_found','a foreign redemption is hidden from purchase simulation');
+    v_result := public.simulate_partner_purchase(v_user,v_redemption,1);
+    perform pg_temp.assert_true((v_result->>'amount_cents')::integer=1 and (v_result->>'commission_cents')::integer=0,
+        'one-cent purchase commission rounds down to zero');
+    perform pg_temp.expect_error(format('select public.simulate_partner_purchase(%L,%L,4000)',v_user,v_redemption),
+        'P0001','already_purchased','a repeated simulated purchase returns a conflict');
+    select id into v_redemption from public.redemptions where user_id=v_user and promo_code='SHOWUP-BBBBBB';
+    v_result := public.simulate_partner_purchase(v_user,v_redemption,7);
+    perform pg_temp.assert_true((v_result->>'commission_cents')::integer=1,
+        'seven-cent purchase at fifteen percent rounds down to one cent');
+    update public.partners set commission_pct=15.99 where id='b6111111-1111-4111-8111-111111111111';
+    v_result := public.redeem_reward(v_user,v_reward,array['SHOWUP-CCCCCC']);
+    select id into v_redemption from public.redemptions where user_id=v_user and promo_code='SHOWUP-CCCCCC';
+    v_result := public.simulate_partner_purchase(v_user,v_redemption,101);
+    perform pg_temp.assert_true((v_result->>'commission_cents')::integer=16,
+        'fractional commission percentages use exact numeric arithmetic and floor');
+    perform pg_temp.assert_true(public.partner_stats('b6111111-1111-4111-8111-111111111111') =
+        '{"sales_count":3,"revenue_cents":109,"commission_cents":17}'::jsonb,
+        'partner stats sums all sales and commissions exactly');
+    select id into v_redemption from public.redemptions where user_id=v_user and reward_id='c6111111-1111-4111-8111-111111111111';
+    perform pg_temp.expect_error(format('select public.simulate_partner_purchase(%L,%L,4000)',v_user,v_redemption),
+        'P0001','validation_error','a Pro redemption cannot be simulated as a partner purchase');
+end;
+$$;
+reset role;
+
+-- Different positive balances make accidental cross-user disclosure observable.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','a6444444-4444-4444-8444-444444444444',true);
+select pg_temp.assert_true(public.coin_balance('a6444444-4444-4444-8444-444444444444') = 77
+    and public.coin_balance('a6555555-5555-4555-8555-555555555555') = 0,
+    'authenticated A reads its positive balance but cannot discover B positive balance through arbitrary RPC arguments');
+reset role;
+set local role service_role;
+select pg_temp.assert_true(public.coin_balance('a6555555-5555-4555-8555-555555555555') = 123,
+    'service role confirms the hidden B balance really is positive');
+reset role;
+
+create function pg_temp.reject_commerce_subscription() returns trigger language plpgsql as $$
+begin
+    if new.source = 'coin_redemption' then
+        raise exception using errcode='P7781', message='Injected commerce subscription failure.';
+    end if;
+    return new;
+end;
+$$;
+create trigger verification_reject_commerce_subscription before insert or update on public.subscriptions
+for each row execute function pg_temp.reject_commerce_subscription();
+set local role service_role;
+select pg_temp.expect_error($q$select public.redeem_reward('a6555555-5555-4555-8555-555555555555',
+    'c6111111-1111-4111-8111-111111111111',array[]::text[])$q$,
+    'P7781','Injected commerce subscription failure.','late commerce subscription failure propagates');
+select pg_temp.assert_true(public.coin_balance('a6555555-5555-4555-8555-555555555555') = 123
+    and not exists(select 1 from public.redemptions where user_id='a6555555-5555-4555-8555-555555555555')
+    and not exists(select 1 from public.subscriptions where user_id='a6555555-5555-4555-8555-555555555555')
+    and not (select is_pro from public.profiles where id='a6555555-5555-4555-8555-555555555555'),
+    'late commerce failure rolls back redemption debit subscription and Pro flag together');
+reset role;
+drop trigger verification_reject_commerce_subscription on public.subscriptions;
+
+set local role anon;
+select pg_temp.expect_error($q$select public.redeem_reward('a6111111-1111-4111-8111-111111111111',
+    'c6111111-1111-4111-8111-111111111111',array[]::text[])$q$,'42501',null,'anon cannot execute the HTTP redemption overload');
+select pg_temp.expect_error($q$select public.mock_subscribe('a6111111-1111-4111-8111-111111111111')$q$,
+    '42501',null,'anon cannot execute mock billing');
+reset role;
+set local role authenticated;
+select pg_temp.expect_error($q$select public.simulate_partner_purchase('a6111111-1111-4111-8111-111111111111',
+    'd6111111-1111-4111-8111-111111111111',4000)$q$,'42501',null,'authenticated cannot call purchase RPC directly');
+select pg_temp.expect_error($q$select public.partner_stats('b6111111-1111-4111-8111-111111111111')$q$,
+    '42501',null,'authenticated cannot call partner stats RPC directly');
+reset role;
+rollback;
+
+-- Migration 007 additions. All earlier assertions remain unchanged.
+begin;
+create function pg_temp.assert_true(p_condition boolean, p_label text)
+returns void language plpgsql as $$
+begin
+    if p_condition is distinct from true then raise exception 'FAIL: %', p_label; end if;
+    raise notice 'PASS: %', p_label;
+end;
+$$;
+create function pg_temp.expect_error(p_sql text, p_state text, p_message text, p_label text)
+returns void language plpgsql as $$
+declare v_state text; v_message text;
+begin
+    begin execute p_sql;
+    exception when others then get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    end;
+    perform pg_temp.assert_true(v_state = p_state and (p_message is null or v_message = p_message), p_label);
+end;
+$$;
+grant execute on function pg_temp.assert_true(boolean, text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect_error(text, text, text, text) to anon, authenticated, service_role;
+
+select pg_temp.assert_true(
+    has_function_privilege('service_role','public.seed_demo_account(uuid,jsonb,jsonb,uuid,jsonb)','EXECUTE')
+    and not has_function_privilege('anon','public.seed_demo_account(uuid,jsonb,jsonb,uuid,jsonb)','EXECUTE')
+    and not has_function_privilege('authenticated','public.seed_demo_account(uuid,jsonb,jsonb,uuid,jsonb)','EXECUTE')
+    and (select not prosecdef and 'search_path=""'=any(proconfig) from pg_proc
+        where oid='public.seed_demo_account(uuid,jsonb,jsonb,uuid,jsonb)'::regprocedure),
+    'demo seed persistence is service-only and uses invoker rights with an empty search_path');
+
+insert into auth.users(id) values
+('a7111111-1111-4111-8111-111111111111'),('a7222222-2222-4222-8222-222222222222');
+set local role service_role;
+insert into public.partners(id,name,type,commission_pct,ref_slug)
+values ('b7111111-1111-4111-8111-111111111111','Demo verification gym','gym',0,'demo-verification-007');
+insert into public.gyms(id,name,city,address,qr_secret,partner_id,timezone)
+values ('c7111111-1111-4111-8111-111111111111','Demo verification location','Austin','Test location',
+    gen_random_uuid()::text,'b7111111-1111-4111-8111-111111111111','America/Chicago');
+do $$
+declare
+    v_user uuid := 'a7111111-1111-4111-8111-111111111111';
+    v_other uuid := 'a7222222-2222-4222-8222-222222222222';
+    v_gym uuid := 'c7111111-1111-4111-8111-111111111111';
+    v_plan jsonb := '{"id":"d7111111-1111-4111-8111-111111111111","days":[
+        {"weekday":1,"exercises":[{"slug":"demo-fixture"}]},
+        {"weekday":3,"exercises":[{"slug":"demo-fixture"}]},
+        {"weekday":5,"exercises":[{"slug":"demo-fixture"}]}]}';
+    v_profile jsonb := '{"height_cm":175,"weight_kg":75,"age":30,"goal":"general_fitness",
+        "workout_types":["gym_strength"],"equipment":["full_gym"],"session_minutes":45,
+        "weekdays":[1,3,5],"injuries":[],"timezone":"America/Chicago","display_name":"Demo Athlete"}';
+    v_events jsonb := '[
+        {"day_index":0,"completed_at":"2020-01-06T18:00:00Z","exercises":[{"slug":"demo-fixture","sets":[{"reps":8,"weight_kg":0}]}]},
+        {"day_index":1,"completed_at":"2020-01-08T18:00:00Z","exercises":[{"slug":"demo-fixture","sets":[{"reps":8,"weight_kg":0}]}]},
+        {"day_index":2,"completed_at":"2020-01-10T18:00:00Z","exercises":[{"slug":"demo-fixture","sets":[{"reps":8,"weight_kg":0}]}]}]';
+    v_result jsonb;
+begin
+    v_result := public.seed_demo_account(v_user,v_plan,v_profile,v_gym,v_events);
+    perform pg_temp.assert_true(v_result='{"plans":1,"checkins":3,"sessions":3,"ledger_entries":8}'::jsonb
+        and public.coin_balance(v_user)=220,
+        'demo seed atomically creates a plan, three check-ins and sessions, and all standard rewards');
+    perform pg_temp.assert_true((select age=30 and weekdays=array[1,3,5] and session_minutes=45
+        and timezone='America/Chicago' and equipment=array['full_gym'] and injuries='[]'::jsonb
+        from public.profiles where id=v_user)
+        and (select input_snapshot=v_profile-'timezone'-'display_name' and active
+            from public.workout_plans where id=(v_plan->>'id')::uuid)
+        and not exists(select 1 from app_private.plan_generation_attempts where user_id=v_user),
+        'demo uses the questionnaire snapshot and deterministic fallback without charging an AI attempt');
+    perform pg_temp.assert_true(public.seed_demo_account(v_user,v_plan,v_profile,v_gym,v_events)=v_result
+        and public.coin_balance(v_user)=220,
+        'repeating the demo seed does not duplicate users, plans, activity or coins');
+    perform pg_temp.expect_error(format('select public.seed_demo_account(%L,%L::jsonb,%L::jsonb,%L,%L::jsonb)',
+        v_other,v_plan,v_profile,v_gym,v_events),'P0001','validation_error',
+        'demo seed rejects a plan ID belonging to another user');
+    perform pg_temp.expect_error(format('select public.seed_demo_account(%L,%L::jsonb,%L::jsonb,%L,%L::jsonb)',
+        v_other,jsonb_set(v_plan,'{id}','"d7222222-2222-4222-8222-222222222222"'),v_profile,v_gym,
+        jsonb_set(v_events,'{2,exercises,0,sets,0,reps}','0')),'P0001','validation_error',
+        'an invalid final demo workout aborts the entire fixture transaction');
+    perform pg_temp.assert_true((select age is null and weekdays='{}'::integer[] from public.profiles where id=v_other)
+        and not exists(select 1 from public.workout_plans where user_id=v_other)
+        and not exists(select 1 from public.gym_checkins where user_id=v_other)
+        and not exists(select 1 from public.workout_sessions where user_id=v_other)
+        and public.coin_balance(v_other)=0,
+        'failed demo persistence rolls back the profile, plan, earlier check-ins, sessions and ledger');
+end;
+$$;
+reset role;
+set local role authenticated;
+select pg_temp.expect_error($q$select public.seed_demo_account('a7111111-1111-4111-8111-111111111111',
+    '{}','{}','c7111111-1111-4111-8111-111111111111','[]')$q$,
+    '42501',null,'authenticated cannot invoke demo history seeding');
+reset role;
+set local role anon;
+select pg_temp.expect_error($q$select public.seed_demo_account('a7111111-1111-4111-8111-111111111111',
+    '{}','{}','c7111111-1111-4111-8111-111111111111','[]')$q$,
+    '42501',null,'anon cannot invoke demo history seeding');
+reset role;
+rollback;

@@ -12,12 +12,12 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     const environment = { ...process.env };
     delete environment.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [
-      "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
+      "--use-system-ca", "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
     ], { encoding: "utf8", timeout: 45_000, windowsHide: true, env: environment });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /^# tests 16$/m);
-    assert.match(result.stdout, /^# pass 16$/m);
+    assert.match(result.stdout, /^# tests 17$/m);
+    assert.match(result.stdout, /^# pass 17$/m);
     assert.match(result.stdout, /^# fail 0$/m);
     assert.doesNotMatch(result.stderr, /recursively/i);
   });
@@ -422,6 +422,21 @@ if (!process.execArgv.includes("--conditions=react-server")) {
       assert.equal(state.requests.filter((request) => request.path === "/chat/completions").length, 0);
       assert.equal(state.plans.length, 1);
       assert.equal(state.requests.filter((request) => request.path === "/rest/v1/rpc/save_fallback_plan").length, 1);
+    });
+  });
+
+  test("fallback after real AI requests consumes the Free attempt", async (context) => {
+    await withServer(context, { invalidJson: true }, async (state) => {
+      const first = await generateRoute(generateRequest());
+      assert.equal(first.status, 200);
+      assert.equal((await first.json()).plan.title, "Balanced Weekly Training");
+      assert.equal(state.attempts, 1);
+      assert.equal(state.requests.filter(request => request.path === "/chat/completions").length, 2);
+      const second = await generateRoute(generateRequest());
+      assert.equal(second.status, 402);
+      assert.equal((await second.json()).error.code, "pro_required");
+      assert.equal(state.attempts, 1);
+      assert.equal(state.requests.filter(request => request.path === "/chat/completions").length, 2);
     });
   });
 

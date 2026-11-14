@@ -244,6 +244,22 @@ async function main() {
     ensure(response.data?.balance === 100 && typeof response.data?.pro_until === 'string', 'Service redemption did not return the expected balance and Pro expiry.');
   }, true);
 
+  for (const [label, credentials, target, expected] of [
+    ['service role reads user B balance', service, b.id, 100],
+    ['user A reads their own balance', a.credentials, a.id, 200],
+    ['user B reads their own balance', b.credentials, b.id, 100],
+    ['user A cannot obtain user B balance through coin_balance', a.credentials, b.id, 0],
+    ['user B cannot obtain user A balance through coin_balance', b.credentials, a.id, 0],
+  ]) {
+    await check(label, async () => {
+      const response = await request('rest/v1/rpc/coin_balance', credentials, {
+        method: 'POST', body: { p_user_id: target },
+      });
+      requireSuccess(response);
+      ensure(response.data === expected, 'Balance RPC did not respect the caller row visibility.');
+    });
+  }
+
   for (const table of ['profiles', 'workout_plans', 'workout_sessions', 'gym_checkins', 'coin_ledger', 'redemptions', 'subscriptions', 'food_logs']) {
     const ownershipColumn = table === 'profiles' ? 'id' : 'user_id';
     const query = { [ownershipColumn]: `eq.${b.id}`, select: ownershipColumn };

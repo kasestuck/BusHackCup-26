@@ -10,12 +10,12 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [
-      "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
+      "--use-system-ca", "--conditions=react-server", "--test", "--test-reporter=tap", fileURLToPath(import.meta.url),
     ], { env, encoding: "utf8", timeout: 30_000, windowsHide: true });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /# tests 8\b/);
-    assert.match(result.stdout, /# pass 8\b/);
+    assert.match(result.stdout, /# tests 10\b/);
+    assert.match(result.stdout, /# pass 10\b/);
     assert.match(result.stdout, /# fail 0\b/);
     assert.doesNotMatch(result.stderr, /recursively|skipping running files/);
   });
@@ -156,6 +156,35 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     });
   });
 
+  test("public QR rejects a malformed UUID with 422 before accessing Supabase", async (context) => {
+    await withMockSupabase(context, {}, async (requests) => {
+      const response = await getQr(qrRequest(gymKey), { params: Promise.resolve({ id: "abc" }) });
+      assert.equal(response.status, 422);
+      assert.equal((await response.json()).error.code, "validation_error");
+      assert.equal(requests.length, 0);
+    });
+  });
+
+  test("malformed JSON and extra POST fields return 422 before activity RPCs", async (context) => {
+    await withMockSupabase(context, {}, async (requests) => {
+      for (const [path, handler, body] of [
+        ["checkin", checkin, { gym_id: gymId, token: "invalid-token", extra: true }],
+        ["sessions", sessions, { ...sessionBody, extra: true }],
+      ] as const) {
+        const malformed = new Request(`https://app.test/api/${path}`, {
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: "{invalid",
+        });
+        for (const request of [malformed, postRequest(path, body)]) {
+          const response = await handler(request);
+          assert.equal(response.status, 422);
+          assert.equal((await response.json()).error.code, "validation_error");
+        }
+      }
+      assert.equal(rpcRequests(requests).length, 0);
+    });
+  });
+
   test("public QR returns the HMAC and remaining seconds without exposing the gym secret", async (context) => {
     await withMockSupabase(context, {}, async (requests) => {
       const response = await getQr(qrRequest(gymKey), { params: Promise.resolve({ id: gymId }) });
@@ -173,7 +202,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
       const token = createGymQrToken(qrSecret, new Date(now - 180_000)).token;
       const response = await checkin(postRequest("checkin", { gym_id: gymId, token }));
       assert.equal(response.status, 422);
-      assert.equal((await response.json()).error.code, "validation_error");
+      assert.equal((await response.json()).error.code, "invalid_qr_token");
       assert.equal(rpcRequests(requests).length, 0);
     });
   });

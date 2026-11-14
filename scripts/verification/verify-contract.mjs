@@ -36,9 +36,10 @@ export function verifyContract(c) {
     nutrition: [{ image: new File(['test-only'], 'sample.jpg', { type: 'image/jpeg' }) },
       { items: [{ name: 'Food', grams_estimate: 100, ...macros }], totals: macros, confidence: 'low', disclaimer: 'Approximate estimate.' }],
     partnerStats: [{ query: { partner_id: id } }, { sales_count: 1, revenue_cents: 1000, commission_cents: 150 }],
+    simulatePurchase: [{ redemption_id: id }, { sale_id: id, amount_cents: 4000, commission_cents: 600 }],
   };
-  assert.equal(Object.keys(c.EndpointContracts).length, 13);
-  assert.equal(new Set(Object.values(c.EndpointContracts).map(e => `${e.method} ${e.path}`)).size, 13);
+  assert.equal(Object.keys(c.EndpointContracts).length, 14);
+  assert.equal(new Set(Object.values(c.EndpointContracts).map(e => `${e.method} ${e.path}`)).size, 14);
   for (const [name, endpoint] of Object.entries(c.EndpointContracts)) {
     const sample = samples[name];
     assert.ok(sample, `Missing samples for ${name}`);
@@ -53,6 +54,8 @@ export function verifyContract(c) {
     [401, 'unauthorized'], [402, 'not_enough_coins'], [402, 'pro_required'],
     [404, 'plan_not_found'], [409, 'already_checked_in'],
     [422, 'validation_error'], [429, 'rate_limited'], [500, 'internal_error'], [404, 'gym_not_found'],
+    [422, 'invalid_qr_token'], [404, 'reward_not_found'], [409, 'reward_inactive'],
+    [404, 'redemption_not_found'], [409, 'already_purchased'], [404, 'partner_not_found'],
   ];
   for (const [status, code] of errorExamples) {
     c.ApiErrorResponseSchema.parse({ status, body: { error: { code, message: c.ErrorMessageExamples[code] } } });
