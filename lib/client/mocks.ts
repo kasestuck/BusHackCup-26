@@ -18,7 +18,7 @@ import type {
   RewardsResponse,
   Weekday,
 } from "@/lib/contract";
-import { API_ROUTES, OnboardingRequestSchema } from "@/lib/contract";
+import { API_ROUTES, OnboardingRequestSchema, SessionRequestSchema } from "@/lib/contract";
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
@@ -75,7 +75,22 @@ export function getMockScenario(): MockScenario {
 }
 
 /** What the mock backend has "stored" for this tab. */
-type MockDb = { profile?: Profile; onboarding?: OnboardingRequest; plan?: Plan };
+type MockDb = {
+  profile?: Profile;
+  onboarding?: OnboardingRequest;
+  plan?: Plan;
+  /** Coins earned in this tab on top of the scenario's starting balance. */
+  coinsEarned?: number;
+  /** Local date (YYYY-MM-DD) of the last logged session — coins pay once a day (SPEC §7). */
+  lastSessionDate?: string;
+};
+
+const localDate = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function baseBalance(scenario: MockScenario, db: MockDb) {
+  return scenario === "new_user" ? (db.plan ? 20 : 0) : 640;
+}
 
 function readDb(): MockDb {
   try {
@@ -181,7 +196,7 @@ function mockMe(scenario: MockScenario, plan: Plan, db: MockDb): MeResponse {
   return {
     profile,
     // New users earn 20 coins for their first AI plan (SPEC §7).
-    coins_balance: fresh ? (db.plan ? 20 : 0) : 640,
+    coins_balance: baseBalance(scenario, db) + (db.coinsEarned ?? 0),
     streak: fresh ? 0 : 6,
     is_pro: isPro,
     has_plan: !!db.plan || (!fresh && scenario !== "no_plan"),
@@ -280,6 +295,20 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         };
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
+      }
+      case API_ROUTES.sessions: {
+        const parsed = SessionRequestSchema.safeParse(readBody(init));
+        if (!parsed.success || parsed.data.exercises.length === 0) {
+          return err(422, "invalid_data", "Log at least one completed set before finishing.");
+        }
+        const sets = parsed.data.exercises.reduce((n, e) => n + e.sets.length, 0);
+        // XP formula is the backend's call; the mock uses 10 XP per completed set.
+        const xp = sets * 10;
+        const today = localDate();
+        const coins = db.lastSessionDate === today ? 0 : 10;
+        const coinsEarned = (db.coinsEarned ?? 0) + coins;
+        writeDb({ ...db, coinsEarned, lastSessionDate: today });
+        return json(200, { xp_earned: xp, coins_earned: coins, balance: baseBalance(scenario, db) + coinsEarned });
       }
       case API_ROUTES.planGenerate: {
         if (scenario === "rate_limited") {
