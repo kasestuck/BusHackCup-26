@@ -328,8 +328,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const scenario = getMockScenario();
   const method = init?.method ?? "GET";
   const isGenerate = method === "POST" && path === API_ROUTES.planGenerate;
-  // SPEC §6: generation takes 5–15 s; the mock sits at the fast end.
-  await delay(scenario === "slow" ? 2500 : isGenerate ? 5200 : 350 + Math.random() * 300);
+  const isNutrition = method === "POST" && path === API_ROUTES.nutritionAnalyze;
+  // SPEC §6: generation takes 5–15 s; the mock sits at the fast end. Photo analysis is AI too.
+  await delay(scenario === "slow" ? 2500 : isGenerate ? 5200 : isNutrition ? 3600 : 350 + Math.random() * 300);
 
   if (scenario === "offline") throw new TypeError("Failed to fetch (mock offline)");
   if (scenario === "unauthorized") return err(401, "unauthorized", "Please sign in to continue.");
@@ -359,6 +360,29 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         };
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
+      }
+      case API_ROUTES.nutritionAnalyze: {
+        // SPEC §8: the server checks is_pro before calling the model.
+        if (!mockIsPro(scenario, db)) {
+          return err(402, "pro_required", "Nutrition analysis is part of ShowUp Pro.");
+        }
+        const image = init?.body instanceof FormData ? init.body.get("image") : null;
+        if (!(image instanceof Blob) || image.size === 0) {
+          return err(422, "image_required", "Add a photo of your meal.");
+        }
+        const items = [
+          { name: "Grilled chicken breast", grams_estimate: 150, kcal: 248, protein_g: 46, carbs_g: 0, fat_g: 5 },
+          { name: "White rice", grams_estimate: 180, kcal: 234, protein_g: 4, carbs_g: 51, fat_g: 1 },
+          { name: "Steamed broccoli", grams_estimate: 90, kcal: 31, protein_g: 3, carbs_g: 6, fat_g: 0 },
+          { name: "Olive oil drizzle", grams_estimate: 7, kcal: 62, protein_g: 0, carbs_g: 0, fat_g: 7 },
+        ];
+        const sum = (k: "kcal" | "protein_g" | "carbs_g" | "fat_g") => items.reduce((n, i) => n + i[k], 0);
+        return json(200, {
+          items,
+          totals: { kcal: sum("kcal"), protein_g: sum("protein_g"), carbs_g: sum("carbs_g"), fat_g: sum("fat_g") },
+          confidence: "medium",
+          disclaimer: "Approximate estimate from a photo. Portions and hidden ingredients (oils, sauces) can change the numbers.",
+        });
       }
       case API_ROUTES.billingSubscribe: {
         const body = readBody(init) as { plan?: unknown } | null;
