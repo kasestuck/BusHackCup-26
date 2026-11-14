@@ -136,6 +136,13 @@ export const IconRefresh = (p: IconProps) => (
   </Base>
 );
 
+export const IconBowl = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3.5 11.5h17a8.5 8.5 0 0 1-17 0Z" />
+    <path d="M8 8.5c0-1.5 1-2.5 2.5-2.5M12.5 8.5c0-2 1.2-3.5 3-3.5M17 8.5c0-.8.4-1.5 1-1.8" />
+  </Base>
+);
+
 export const IconShield = (p: IconProps) => (
   <Base {...p}>
     <path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-2.5Z" />

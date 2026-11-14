@@ -135,6 +135,15 @@
   }
 }
 
+@keyframes su-meal-scan {
+  from {
+    top: -33%;
+  }
+  to {
+    top: 100%;
+  }
+}
+
 @keyframes su-pulse {
   0%,
   100% {
