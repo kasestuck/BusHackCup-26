@@ -1,0 +1,767 @@
+[
+  {
+    "slug": "barbell-back-squat",
+    "name": "Barbell Back Squat",
+    "muscle_group": "quadriceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee",
+      "lower back",
+      "shoulder",
+      "wrist",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "barbell-deadlift",
+    "name": "Barbell Deadlift",
+    "muscle_group": "posterior_chain",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "lower back",
+      "knee",
+      "shoulder",
+      "wrist",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "leg-press",
+    "name": "Leg Press",
+    "muscle_group": "quadriceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee",
+      "lower back",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "seated-leg-curl",
+    "name": "Seated Leg Curl",
+    "muscle_group": "hamstrings",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "leg-extension",
+    "name": "Leg Extension",
+    "muscle_group": "quadriceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "machine-chest-press",
+    "name": "Machine Chest Press",
+    "muscle_group": "chest",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "lat-pulldown",
+    "name": "Lat Pulldown",
+    "muscle_group": "back",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "seated-cable-row",
+    "name": "Seated Cable Row",
+    "muscle_group": "back",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "cable-triceps-pushdown",
+    "name": "Cable Triceps Pushdown",
+    "muscle_group": "triceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-cable-curl",
+    "name": "Standing Cable Curl",
+    "muscle_group": "biceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "goblet-squat",
+    "name": "Goblet Squat",
+    "muscle_group": "quadriceps",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "knee",
+      "lower back",
+      "shoulder",
+      "wrist",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-romanian-deadlift",
+    "name": "Dumbbell Romanian Deadlift",
+    "muscle_group": "hamstrings",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "lower back",
+      "knee",
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-floor-press",
+    "name": "Dumbbell Floor Press",
+    "muscle_group": "chest",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-bent-over-row",
+    "name": "Dumbbell Bent Over Row",
+    "muscle_group": "back",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "wrist",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-overhead-press",
+    "name": "Dumbbell Overhead Press",
+    "muscle_group": "shoulders",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-lateral-raise",
+    "name": "Dumbbell Lateral Raise",
+    "muscle_group": "shoulders",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-biceps-curl",
+    "name": "Dumbbell Biceps Curl",
+    "muscle_group": "biceps",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-hammer-curl",
+    "name": "Dumbbell Hammer Curl",
+    "muscle_group": "biceps",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-triceps-kickback",
+    "name": "Dumbbell Triceps Kickback",
+    "muscle_group": "triceps",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dumbbell-farmers-carry",
+    "name": "Dumbbell Farmer's Carry",
+    "muscle_group": "full_body",
+    "equipment": "dumbbells",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back",
+      "knee",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "band-row",
+    "name": "Resistance Band Row",
+    "muscle_group": "back",
+    "equipment": "bands",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "band-pull-apart",
+    "name": "Resistance Band Pull Apart",
+    "muscle_group": "upper_back",
+    "equipment": "bands",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "band-biceps-curl",
+    "name": "Resistance Band Biceps Curl",
+    "muscle_group": "biceps",
+    "equipment": "bands",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "band-overhead-press",
+    "name": "Resistance Band Overhead Press",
+    "muscle_group": "shoulders",
+    "equipment": "bands",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "band-glute-bridge",
+    "name": "Resistance Band Glute Bridge",
+    "muscle_group": "glutes",
+    "equipment": "bands",
+    "contraindicated_for": [
+      "knee",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "bodyweight-squat",
+    "name": "Bodyweight Squat",
+    "muscle_group": "quadriceps",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "lower back",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "reverse-lunge",
+    "name": "Reverse Lunge",
+    "muscle_group": "quadriceps",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "split-squat",
+    "name": "Split Squat",
+    "muscle_group": "quadriceps",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "wall-push-up",
+    "name": "Wall Push Up",
+    "muscle_group": "chest",
+    "equipment": "none",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "push-up",
+    "name": "Push Up",
+    "muscle_group": "chest",
+    "equipment": "none",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "knee-push-up",
+    "name": "Knee Push Up",
+    "muscle_group": "chest",
+    "equipment": "none",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "knee",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "glute-bridge",
+    "name": "Glute Bridge",
+    "muscle_group": "glutes",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-calf-raise",
+    "name": "Standing Calf Raise",
+    "muscle_group": "calves",
+    "equipment": "none",
+    "contraindicated_for": [
+      "ankle",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "dead-bug",
+    "name": "Dead Bug",
+    "muscle_group": "core",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "bird-dog",
+    "name": "Bird Dog",
+    "muscle_group": "core",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "wrist",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "forearm-plank",
+    "name": "Forearm Plank",
+    "muscle_group": "core",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "side-plank",
+    "name": "Side Plank",
+    "muscle_group": "core",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "cat-cow",
+    "name": "Cat Cow",
+    "muscle_group": "back",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "wrist",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "childs-pose",
+    "name": "Child's Pose",
+    "muscle_group": "back",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder",
+      "knee",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-hip-circles",
+    "name": "Standing Hip Circles",
+    "muscle_group": "hips",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "knee",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-ankle-circles",
+    "name": "Standing Ankle Circles",
+    "muscle_group": "calves",
+    "equipment": "none",
+    "contraindicated_for": [
+      "ankle",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-shoulder-circles",
+    "name": "Standing Shoulder Circles",
+    "muscle_group": "shoulders",
+    "equipment": "none",
+    "contraindicated_for": [
+      "shoulder"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "seated-thoracic-rotation",
+    "name": "Seated Thoracic Rotation",
+    "muscle_group": "back",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "shoulder"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "supine-knee-to-chest",
+    "name": "Supine Knee to Chest Stretch",
+    "muscle_group": "glutes",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "half-kneeling-hip-flexor-stretch",
+    "name": "Half Kneeling Hip Flexor Stretch",
+    "muscle_group": "hips",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "lower back",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-hamstring-stretch",
+    "name": "Standing Hamstring Stretch",
+    "muscle_group": "hamstrings",
+    "equipment": "none",
+    "contraindicated_for": [
+      "lower back",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "standing-calf-stretch",
+    "name": "Standing Calf Stretch",
+    "muscle_group": "calves",
+    "equipment": "none",
+    "contraindicated_for": [
+      "ankle",
+      "knee"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "march-in-place",
+    "name": "March in Place",
+    "muscle_group": "full_body",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "step-jack",
+    "name": "Step Jack",
+    "muscle_group": "full_body",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "shoulder"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "jumping-jack",
+    "name": "Jumping Jack",
+    "muscle_group": "full_body",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "shoulder",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "high-knees",
+    "name": "High Knees",
+    "muscle_group": "full_body",
+    "equipment": "none",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "shadow-boxing",
+    "name": "Shadow Boxing",
+    "muscle_group": "full_body",
+    "equipment": "none",
+    "contraindicated_for": [
+      "shoulder",
+      "wrist",
+      "lower back",
+      "knee",
+      "ankle"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "stationary-bike",
+    "name": "Stationary Bike",
+    "muscle_group": "quadriceps",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "treadmill-walk",
+    "name": "Treadmill Walk",
+    "muscle_group": "full_body",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  },
+  {
+    "slug": "elliptical",
+    "name": "Elliptical",
+    "muscle_group": "full_body",
+    "equipment": "full_gym",
+    "contraindicated_for": [
+      "knee",
+      "ankle",
+      "shoulder",
+      "lower back"
+    ],
+    "video_youtube_id": null,
+    "video_title": null,
+    "verified": false
+  }
+]
+
