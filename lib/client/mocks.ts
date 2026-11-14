@@ -360,6 +360,14 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         writeDb({ ...db, profile, onboarding: input });
         return json(200, { profile });
       }
+      case API_ROUTES.billingSubscribe: {
+        const body = readBody(init) as { plan?: unknown } | null;
+        if (body?.plan !== "pro_monthly") return err(422, "invalid_plan", "Unknown plan.");
+        // SPEC §7: simulated payment — the server sets is_pro and pro_until = now + 30 days.
+        const proUntil = new Date(Date.now() + 30 * 86_400_000).toISOString();
+        writeDb({ ...db, proUntil });
+        return json(200, { is_pro: true, pro_until: proUntil });
+      }
       case API_ROUTES.rewardsRedeem: {
         const parsed = RedeemRequestSchema.safeParse(readBody(init));
         const reward = parsed.success ? MOCK_REWARDS.rewards.find((r) => r.id === parsed.data.reward_id) : undefined;
