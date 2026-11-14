@@ -1,6 +1,6 @@
-# Проверка контракта и миграции
+# Проверка контракта и миграций
 
-Это отдельный проверочный пакет, не зависимости будущего приложения. Node 22+ и pnpm. Исходные данные тестов временные: это не seed и не данные демо-приложения. API-маршрутов здесь нет. `docs/SPEC.md` отсутствовал; по подтверждению пользователя использован приложенный PDF целиком.
+Это отдельный проверочный пакет, не зависимости приложения. Node 22.18+ и pnpm. Исходные данные тестов временные: это не seed и не данные демо-приложения. `docs/SPEC.md` отсутствовал; по подтверждению пользователя использован приложенный PDF целиком. Для новых RPC расширены существующие assertions и concurrency; новых проверочных пакетов или runner-файлов не добавлено.
 
 ## Команды
 
@@ -11,7 +11,9 @@ pnpm --dir scripts/verification install --frozen-lockfile --ignore-scripts
 node scripts/verification/verify.mjs
 ```
 
-Первый тест использует PGlite в памяти: создаёт минимальные Supabase Auth primitives (`auth.users`, `auth.uid`, роли), намеренно выдаёт широкие default grants, затем применяет миграцию и проверяет, что она закрывает эти grants. В `assertions.sql` все данные создаются между BEGIN/ROLLBACK. Проверяются SQL, реальные роли и RLS, идемпотентность наград, атомарный откат ошибки после вставки списания, обе разновидности redeem и продление Pro. Затем все TypeScript-блоки документа компилируются вместе и проверяются примеры всех 13 запросов, успешных ответов и ошибок. Примеры JSON и image File — только входы тестов; AI и HTTP не вызываются.
+Без `TEST_DATABASE_URL` первый тест использует PGlite в памяти: создаёт минимальные Supabase Auth primitives (`auth.users`, `auth.uid`, роли), намеренно выдаёт широкие default grants, затем применяет **все** SQL-миграции по имени и проверяет закрытие grants. В `assertions.sql` все данные создаются между BEGIN/ROLLBACK. Проверяются SQL, реальные роли и RLS, регистрация профиля, идемпотентность наград, атомарный откат ошибки после вставки списания, обе разновидности redeem и продление Pro. Затем все TypeScript-блоки документа компилируются вместе и проверяются примеры всех 13 запросов, успешных ответов и ошибок, включая 500 и новые ошибки QR. Примеры JSON и image File — только входы тестов; AI и HTTP не вызываются.
+
+Для activity RPC проверяются календарная полночь в timezone зала, +40 за check-in, отсутствие награды при повторе, +10 за первую тренировку в дне профиля, сохранение повторных тренировок с нулевой наградой, XP и пределы нагрузки, принадлежность плана, бонус +50 за все запланированные дни текущей ISO-недели и отсутствие повторного бонуса. Инъекции ошибки в ledger доказывают откат check-in, session и всей цепочки session → daily reward → weekly bonus.
 
 Для реального параллелизма на Windows x64:
 
@@ -21,7 +23,7 @@ node scripts/verification/native-runner.mjs
 
 Runner создаёт отдельный локальный PostgreSQL из optional dependency, слушающий только `127.0.0.1` на свободном порту, запускает полный набор проверок и `concurrency.mjs`, затем останавливает сервер. Он не использует существующий Supabase-проект. Каталог кластера и журнал сохраняются в игнорируемой `.cache/`; это позволяет разобрать сбой. PGlite использует одно соединение и сам по себе не проверяет конкуренцию ([документация PGlite](https://pglite.dev/docs/)).
 
-`concurrency.mjs` проверяет разные backend PID, реальное ожидание блокировки вторым соединением через `pg_blocking_pids`, затем COMMIT первого и отказ второго `not_enough_coins`. Проверяются один debit, один redemption, одна подписка, баланс 0. Его также можно запускать отдельно на **пустой тестовой** PostgreSQL/Supabase БД с уже применённой миграцией:
+`concurrency.mjs` проверяет разные backend PID и реальное ожидание блокировки вторым соединением через `pg_blocking_pids`. Для redeem после COMMIT первого второй получает `not_enough_coins`; остаются один debit, один redemption и одна подписка. Два check-in дают одну строку, одну награду +40 и один `already_checked_in`; HTTP 409 проверяется отдельно в тестах обработчика. Две тренировки сохраняются обе, но награда +10 выдаётся одна. Его также можно запускать отдельно на **пустой тестовой** PostgreSQL/Supabase БД с уже применёнными миграциями:
 
 ```powershell
 $env:TEST_DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
@@ -39,10 +41,12 @@ Remove-Item Env:TEST_DATABASE_DISPOSABLE
 
 ```powershell
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140001_initial_schema.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140002_profile_bootstrap_and_permissions.sql
+psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/202611140003_activity_rewards.sql
 psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verification/assertions.sql
 ```
 
-Первая команда применяется только один раз к новой базе; миграция намеренно не содержит `IF NOT EXISTS`, скрывающего расхождение схемы. `assertions.sql` завершается ROLLBACK и не оставляет тестовых данных. Локальный bootstrap в `verify.mjs` предназначен исключительно для нового кластера и **не запускается** на готовом Supabase.
+Каждая миграция применяется только один раз и строго по порядку; уже применённые миграции не переписывались. `assertions.sql` завершается ROLLBACK и не оставляет тестовых данных. Локальный bootstrap в `verify.mjs` предназначен исключительно для нового кластера и **не запускается** на готовом Supabase.
 
 Для самостоятельной инспекции без изменения данных:
 
@@ -69,6 +73,8 @@ where schemaname = 'public' and tablename in ('gym_checkins', 'coin_ledger');
 
 select pg_get_functiondef('public.coin_balance(uuid)'::regprocedure);
 select pg_get_functiondef('public.redeem_reward(uuid,uuid)'::regprocedure);
+select pg_get_functiondef('public.record_gym_checkin(uuid,uuid,timestamptz)'::regprocedure);
+select pg_get_functiondef('public.record_workout_session(uuid,uuid,integer,jsonb,timestamptz)'::regprocedure);
 
 select has_function_privilege('anon', 'public.redeem_reward(uuid,uuid)', 'EXECUTE') as anon_redeem,
        has_function_privilege('authenticated', 'public.redeem_reward(uuid,uuid)', 'EXECUTE') as user_redeem,
@@ -80,6 +86,8 @@ select has_function_privilege('anon', 'public.redeem_reward(uuid,uuid)', 'EXECUT
 
 ## Границы результата
 
-Применение миграции, SQL-ограничения, RLS, транзакция redeem и схемы контрактов проверяются локально. Реальный Supabase Auth, PostgREST, Storage, Next.js, cookie-сессии, HTTP-коды на сервере, AI и billing ещё не реализованы/не проверены. HTTP curl к отсутствующим маршрутам не подтверждает эти результаты, поэтому команды curl не приводятся.
+Применение миграций, SQL-ограничения, RLS, транзакции redeem/check-in/session и схемы контрактов проверяются локально. Последний native-runner прошёл с кодом 0; изолированный PostgreSQL остановлен, fixtures удалены либо откатились. Первоначальный sandbox-запуск не смог соединиться с loopback (`EACCES`); повторный запуск с доступом к локальному сокету прошёл после адаптации прав временных helper-функций к миграции 002.
+
+Реальный Supabase Auth, PostgREST, Storage и HTTP-маршруты этот runner не вызывает. Примитив `auth.uid()` и роли воспроизводятся локально; это не настоящий JWT/Supabase Auth. Проверки приложения и точные curl приведены в `docs/backend-integration.md`. Проверка HMAC-окон и прикладной валидации выполняется через `node --test` в корне.
 
 Правила grants/RLS и EXECUTE сверены с [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) и [Supabase functions](https://supabase.com/docs/guides/database/functions). Перечень расхождений PDF, предложенных решений контракта и решений миграции находится в `docs/contract-proposal.md`.

@@ -11,17 +11,29 @@ export class MissingSessionError extends Error {
   }
 }
 
-class SupabaseConfigurationError extends Error {
-  constructor() {
-    super("Supabase is not configured.");
-    this.name = "SupabaseConfigurationError";
+export class ServerConfigurationError extends Error {
+  constructor(variables: readonly string[], reason: "missing" | "invalid" = "missing") {
+    const names = variables.filter((name) => /^[A-Z][A-Z0-9_]*$/.test(name));
+    super(`${reason === "missing" ? "Missing" : "Invalid"} server configuration: ${names.join(" or ")}.`);
+    this.name = "ServerConfigurationError";
   }
 }
 
+function requiredEnvironment(primary: string, fallback?: string): string {
+  const value = process.env[primary]?.trim() || (fallback ? process.env[fallback]?.trim() : undefined);
+  if (!value) throw new ServerConfigurationError(fallback ? [primary, fallback] : [primary]);
+  return value;
+}
+
 function projectUrl(): string {
-  const value = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!value?.trim()) throw new SupabaseConfigurationError();
-  return value.trim();
+  const value = requiredEnvironment("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL");
+  try {
+    const url = new URL(value);
+    if (!["https:", "http:"].includes(url.protocol)) throw new Error("Invalid protocol.");
+  } catch {
+    throw new ServerConfigurationError(["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"], "invalid");
+  }
+  return value;
 }
 
 const noStoreFetch: typeof fetch = (input, init) =>
@@ -37,10 +49,9 @@ export async function createSessionClient(): Promise<SupabaseClient> {
   // Presence only avoids unnecessary configuration/network work. It never proves identity.
   if (!hasSessionCookie) throw new MissingSessionError();
 
-  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!anonKey?.trim()) throw new SupabaseConfigurationError();
+  const anonKey = requiredEnvironment("SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  return createServerClient(projectUrl(), anonKey.trim(), {
+  return createServerClient(projectUrl(), anonKey, {
     global: { fetch: noStoreFetch },
     cookies: {
       getAll() {
@@ -57,12 +68,27 @@ export async function createSessionClient(): Promise<SupabaseClient> {
   });
 }
 
+/** Bind REST requests to the same bearer token that withAuth verifies with getUser(token). */
+export function createBearerClient(token: string): SupabaseClient {
+  const anonKey = requiredEnvironment("SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return createClient(projectUrl(), anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: noStoreFetch,
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  });
+}
+
 /** Service credentials are read lazily and never mixed with a user's session. */
 export function createAdminClient(): SupabaseClient {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey?.trim()) throw new SupabaseConfigurationError();
+  const serviceKey = requiredEnvironment("SUPABASE_SERVICE_ROLE_KEY");
 
-  return createClient(projectUrl(), serviceKey.trim(), {
+  return createClient(projectUrl(), serviceKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

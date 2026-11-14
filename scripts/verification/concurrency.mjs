@@ -27,6 +27,9 @@ const clients = [];
 const userId = randomUUID();
 const rewardId = randomUUID();
 const creditId = randomUUID();
+const partnerId = randomUUID();
+const gymId = randomUUID();
+const planId = randomUUID();
 let coordinator;
 let first;
 let second;
@@ -54,6 +57,41 @@ async function beginAsServiceRole(client) {
   assert.equal(role.rows[0].role, 'service_role');
 }
 
+async function runContended(query, values, label) {
+  const firstPid = (await first.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  const secondPid = (await second.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  assert.notEqual(firstPid, secondPid, 'The test requires independent PostgreSQL connections.');
+  await beginAsServiceRole(first);
+  const firstOutcome = await first.query(query, values);
+  await beginAsServiceRole(second);
+  let secondSettled = false;
+  pendingSecond = second.query(query, values)
+    .then(result => ({ result }), error => ({ error }))
+    .finally(() => { secondSettled = true; });
+  let observedLock = false;
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && !secondSettled) {
+    const activity = await coordinator.query(`
+      SELECT wait_event_type,
+             $1::integer = ANY(pg_catalog.pg_blocking_pids(pid)) AS blocked_by_first
+      FROM pg_catalog.pg_stat_activity WHERE pid = $2
+    `, [firstPid, secondPid]);
+    if (activity.rows[0]?.wait_event_type === 'Lock' && activity.rows[0].blocked_by_first) {
+      observedLock = true;
+      break;
+    }
+    await delay(25);
+  }
+  assert.equal(observedLock, true, `${label}: the second call must wait for the first transaction lock.`);
+  assert.equal(secondSettled, false, `${label}: the second call must remain blocked before COMMIT.`);
+  console.log(`PASS: ${label} uses independent service-role connections contending on the user lock.`);
+  await first.query('COMMIT');
+  const secondOutcome = await pendingSecond;
+  await second.query(secondOutcome.error ? 'ROLLBACK' : 'COMMIT');
+  pendingSecond = undefined;
+  return { first: firstOutcome.rows[0].result, second: secondOutcome };
+}
+
 try {
   coordinator = await connect('coordinator');
   const privilege = await coordinator.query(`
@@ -72,7 +110,8 @@ try {
   // Fixtures must be committed before both independent sessions can see them.
   await coordinator.query('BEGIN');
   await coordinator.query('INSERT INTO auth.users (id) VALUES ($1)', [userId]);
-  await coordinator.query('INSERT INTO public.profiles (id, display_name) VALUES ($1, $2)', [userId, 'Concurrency verification']);
+  await coordinator.query('UPDATE public.profiles SET display_name = $2, timezone = $3, weekdays = ARRAY[1,3] WHERE id = $1',
+    [userId, 'Concurrency verification', 'America/New_York']);
   await coordinator.query(`
     INSERT INTO public.rewards (id, kind, title, cost_coins)
     VALUES ($1, 'pro_month', 'Concurrency verification reward', 100)
@@ -81,49 +120,28 @@ try {
     INSERT INTO public.coin_ledger (id, user_id, amount, reason, ref_id)
     VALUES ($1, $2, 100, 'verification_credit', $3)
   `, [creditId, userId, creditId]);
+  await coordinator.query(`
+    INSERT INTO public.partners(id, name, type, commission_pct, ref_slug)
+    VALUES ($1, 'Concurrency partner', 'gym', 0, $2)
+  `, [partnerId, `concurrency-${partnerId}`]);
+  await coordinator.query(`
+    INSERT INTO public.gyms(id, name, city, address, qr_secret, partner_id, timezone)
+    VALUES ($1, 'Concurrency gym', 'Test City', 'Test Address', 'test-only-secret', $2, 'America/New_York')
+  `, [gymId, partnerId]);
+  await coordinator.query(`
+    INSERT INTO public.workout_plans(id, user_id, input_snapshot, plan_json)
+    VALUES ($1, $2, '{}', '{"days":[{"weekday":1,"exercises":[{"slug":"test-lift"}]}]}')
+  `, [planId, userId]);
   await coordinator.query('COMMIT');
   fixturesCommitted = true;
 
   first = await connect('first');
   second = await connect('second');
-  const firstPid = (await first.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-  const secondPid = (await second.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-  assert.notEqual(firstPid, secondPid, 'The test requires independent PostgreSQL connections.');
-
-  await beginAsServiceRole(first);
-  const redeemed = await first.query('SELECT public.redeem_reward($1, $2) AS result', [userId, rewardId]);
-  assert.equal(redeemed.rows[0].result.balance, 0);
-  assert.ok(redeemed.rows[0].result.pro_until);
-  // Keep the successful debit uncommitted and its profile lock held.
-  await beginAsServiceRole(second);
-  let secondSettled = false;
-  pendingSecond = second.query('SELECT public.redeem_reward($1, $2) AS result', [userId, rewardId])
-    .then(result => ({ result }), error => ({ error }))
-    .finally(() => { secondSettled = true; });
-
-  let observedLock = false;
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline && !secondSettled) {
-    const activity = await coordinator.query(`
-      SELECT wait_event_type,
-             $1::integer = ANY(pg_catalog.pg_blocking_pids(pid)) AS blocked_by_first
-      FROM pg_catalog.pg_stat_activity WHERE pid = $2
-    `, [firstPid, secondPid]);
-    if (activity.rows[0]?.wait_event_type === 'Lock' && activity.rows[0].blocked_by_first) {
-      observedLock = true;
-      break;
-    }
-    await delay(25);
-  }
-  assert.equal(observedLock, true, 'The second redemption must wait for the first transaction lock.');
-  assert.equal(secondSettled, false, 'The second redemption must remain blocked until the first transaction ends.');
-  console.log('PASS: independent service-role connections contend on the same user lock.');
-
-  await first.query('COMMIT');
-  const secondOutcome = await pendingSecond;
-  assert.equal(secondOutcome.error?.code, 'P0001', 'The second redemption must fail after the first commit.');
-  assert.equal(secondOutcome.error?.message, 'not_enough_coins');
-  await second.query('ROLLBACK');
+  const redeemed = await runContended('SELECT public.redeem_reward($1, $2) AS result', [userId, rewardId], 'redemption');
+  assert.equal(redeemed.first.balance, 0);
+  assert.ok(redeemed.first.pro_until);
+  assert.equal(redeemed.second.error?.code, 'P0001');
+  assert.equal(redeemed.second.error?.message, 'not_enough_coins');
   console.log('PASS: the waiting redemption observes the committed debit and rejects insufficient funds.');
 
   const final = await coordinator.query(`
@@ -138,6 +156,33 @@ try {
     balance: '0', ledger_rows: 2, debits: 1, redemptions: 1, subscriptions: 1, is_pro: true,
   });
   console.log('PASS: final balance is zero, with exactly one debit, one redemption and one Pro subscription.');
+
+  const checkins = await runContended('SELECT public.record_gym_checkin($1, $2, $3) AS result',
+    [userId, gymId, '2026-11-16T15:00:00Z'], 'check-in');
+  assert.deepEqual(checkins.first, { coins_earned: 40, balance: 40 });
+  assert.equal(checkins.second.error?.code, 'P0001');
+  assert.equal(checkins.second.error?.message, 'already_checked_in');
+  const checked = await coordinator.query(`
+    SELECT (SELECT count(*)::integer FROM public.gym_checkins WHERE user_id = $1) AS checkins,
+           (SELECT count(*)::integer FROM public.coin_ledger WHERE user_id = $1 AND reason = 'gym_checkin') AS rewards,
+           public.coin_balance($1) AS balance
+  `, [userId]);
+  assert.deepEqual(checked.rows[0], { checkins: 1, rewards: 1, balance: '40' });
+  console.log('PASS: concurrent check-ins create one row, one +40 reward and one already_checked_in conflict.');
+
+  const sessionLog = JSON.stringify([{ slug: 'test-lift', sets: [{ reps: 8, weight_kg: 0 }] }]);
+  const sessions = await runContended('SELECT public.record_workout_session($1, $2, $3, $4::jsonb, $5) AS result',
+    [userId, planId, 0, sessionLog, '2026-11-16T15:00:00Z'], 'workout');
+  assert.deepEqual(sessions.first, { xp_earned: 5, coins_earned: 10, balance: 50 });
+  assert.equal(sessions.second.error, undefined);
+  assert.deepEqual(sessions.second.result.rows[0].result, { xp_earned: 5, coins_earned: 0, balance: 50 });
+  const trained = await coordinator.query(`
+    SELECT (SELECT count(*)::integer FROM public.workout_sessions WHERE user_id = $1) AS sessions,
+           (SELECT count(*)::integer FROM public.coin_ledger WHERE user_id = $1 AND reason = 'workout_session') AS rewards,
+           public.coin_balance($1) AS balance
+  `, [userId]);
+  assert.deepEqual(trained.rows[0], { sessions: 2, rewards: 1, balance: '50' });
+  console.log('PASS: concurrent workouts both persist with XP, but exactly one +10 daily reward is issued.');
 } catch (error) {
   failure = error;
 } finally {
@@ -153,6 +198,8 @@ try {
         // The profile FK cascades only rows belonging to this random test user.
         await coordinator.query('DELETE FROM auth.users WHERE id = $1', [userId]);
         await coordinator.query('DELETE FROM public.rewards WHERE id = $1', [rewardId]);
+        await coordinator.query('DELETE FROM public.gyms WHERE id = $1', [gymId]);
+        await coordinator.query('DELETE FROM public.partners WHERE id = $1', [partnerId]);
         await coordinator.query('COMMIT');
         console.log('PASS: test fixtures removed.');
       }
