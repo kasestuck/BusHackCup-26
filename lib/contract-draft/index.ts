@@ -218,6 +218,7 @@ export function httpError<const Status extends number, Body extends z.ZodType>(
 
 export const UnauthorizedErrorSchema = errorBody("unauthorized");
 export const InvalidGymKeyErrorSchema = errorBody("invalid_gym_key");
+export const GymNotFoundErrorSchema = errorBody("gym_not_found");
 export const InsufficientCoinsErrorSchema = errorBody("not_enough_coins");
 export const ProRequiredErrorSchema = errorBody("pro_required");
 export const PlanNotFoundErrorSchema = errorBody("plan_not_found");
@@ -233,6 +234,7 @@ export const InternalErrorSchema = z.object({
 
 export const UnauthorizedResponseSchema = httpError(401, UnauthorizedErrorSchema);
 export const InvalidGymKeyResponseSchema = httpError(401, InvalidGymKeyErrorSchema);
+export const GymNotFoundResponseSchema = httpError(404, GymNotFoundErrorSchema);
 export const InsufficientCoinsResponseSchema = httpError(402, InsufficientCoinsErrorSchema);
 export const ProRequiredResponseSchema = httpError(402, ProRequiredErrorSchema);
 export const PlanNotFoundResponseSchema = httpError(404, PlanNotFoundErrorSchema);
@@ -242,12 +244,14 @@ export const RateLimitedResponseSchema = httpError(429, RateLimitedErrorSchema);
 export const InternalErrorResponseSchema = httpError(500, InternalErrorSchema);
 
 export const ApiErrorSchema = z.union([
+  GymNotFoundErrorSchema,
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, InsufficientCoinsErrorSchema,
   ProRequiredErrorSchema, PlanNotFoundErrorSchema, AlreadyCheckedInErrorSchema,
   ValidationErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const ApiErrorResponseSchema = z.union([
+  GymNotFoundResponseSchema,
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema,
   InsufficientCoinsResponseSchema, ProRequiredResponseSchema,
   PlanNotFoundResponseSchema, AlreadyCheckedInResponseSchema,
@@ -255,6 +259,8 @@ export const ApiErrorResponseSchema = z.union([
   InternalErrorResponseSchema,
 ]);
 export type InternalError = z.infer<typeof InternalErrorSchema>;
+export type GymNotFoundError = z.infer<typeof GymNotFoundErrorSchema>;
+export type GymNotFoundResponse = z.infer<typeof GymNotFoundResponseSchema>;
 export type InternalErrorResponse = z.infer<typeof InternalErrorResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
@@ -262,6 +268,7 @@ export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 export const ErrorMessageExamples = {
   unauthorized: "Sign in to continue.",
   invalid_gym_key: "The gym key is invalid.",
+  gym_not_found: "The gym was not found.",
   not_enough_coins: "You need 400 more coins.",
   pro_required: "An active Pro subscription is required.",
   plan_not_found: "No active workout plan was found.",
@@ -410,10 +417,12 @@ export const GymQrTokenSuccessSchema = z.object({
 }).strict();
 export const GymQrTokenErrorSchema = z.union([
   UnauthorizedErrorSchema, InvalidGymKeyErrorSchema, ValidationErrorSchema,
+  GymNotFoundErrorSchema, RateLimitedErrorSchema,
   InternalErrorSchema,
 ]);
 export const GymQrTokenErrorResponseSchema = z.union([
   UnauthorizedResponseSchema, InvalidGymKeyResponseSchema, ValidationResponseSchema,
+  GymNotFoundResponseSchema, RateLimitedResponseSchema,
   InternalErrorResponseSchema,
 ]);
 
