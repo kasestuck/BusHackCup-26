@@ -10,6 +10,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { IconAlert, IconCoin } from "@/components/ui/icons";
 import { PRO_FEATURES } from "./pro-features";
+import { SignInLink } from "@/components/auth/sign-in";
 
 type Phase =
   | { step: "confirm" }
@@ -166,9 +167,7 @@ export function RedeemDialog({
               {phase.error.status === 401 && (
                 <>
                   {" "}
-                  <a href="/login" className="font-medium underline">
-                    Sign in
-                  </a>
+                  <SignInLink className="font-medium underline" />
                 </>
               )}
             </span>

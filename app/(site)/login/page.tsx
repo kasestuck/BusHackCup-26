@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { ComingNext } from "@/components/shell/coming-next";
-import { IconLock } from "@/components/ui/icons";
+import { Suspense } from "react";
+import { AuthLayout } from "@/components/auth/auth-layout";
+import { LoginForm } from "@/components/auth/auth-forms";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = { title: "Log in" };
 
-export default function Page() {
+export default function LoginPage() {
+  // LoginForm reads ?next= via useSearchParams, which needs a Suspense boundary.
   return (
-    <ComingNext
-      title="Sign in"
-      icon={<IconLock />}
-      description="Email and password or magic-link sign-in lands here next, together with Supabase auth from the backend."
-    />
+    <AuthLayout>
+      <Suspense>
+        <LoginForm />
+      </Suspense>
+    </AuthLayout>
   );
 }

@@ -9,13 +9,14 @@ import { formatNumber } from "@/lib/client/dashboard";
 import { derivePartnerStats, formatCents } from "@/lib/client/partner";
 import { LogoMark } from "@/components/brand/wordmark";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/section-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, errorKindFromStatus } from "@/components/ui/state";
 import { IconCoin, IconGift, IconMapPin, IconRefresh } from "@/components/ui/icons";
 import { cx } from "@/components/ui/cx";
+import { SignInButton } from "@/components/auth/sign-in";
 
 const REFRESH_MS = 60_000;
 
@@ -98,7 +99,7 @@ function Stats({ partnerId }: { partnerId: string }) {
             kind={kind}
             message={stats.error.message}
             onRetry={retry}
-            action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+            action={kind === "auth" ? <SignInButton /> : undefined}
           />
         )}
       </Card>

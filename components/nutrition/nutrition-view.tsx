@@ -6,7 +6,7 @@ import { apiRequest, type ApiError } from "@/lib/client/api";
 import { useApi } from "@/lib/client/use-api";
 import { checkImageFile } from "@/lib/client/nutrition";
 import { prepareImage } from "@/lib/client/image";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/section-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ import { IconAlert, IconRefresh, IconSpark } from "@/components/ui/icons";
 import { cx } from "@/components/ui/cx";
 import { ProGate } from "@/components/pro/pro-gate";
 import { MacroBar, NutritionResult } from "./nutrition-result";
+import { SignInButton } from "@/components/auth/sign-in";
 
 function Frame({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto max-w-[1120px] px-4 pt-8 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">{children}</div>;
@@ -223,9 +224,7 @@ function Analyzer() {
               message={phase.error.message}
               action={
                 phase.error.status === 401 ? (
-                  <ButtonLink href="/login" arrow>
-                    Sign in
-                  </ButtonLink>
+                  <SignInButton />
                 ) : (
                   <div className="flex flex-wrap justify-center gap-3">
                     <Button variant="secondary" onClick={analyze} icon={<IconRefresh size={18} />}>
@@ -268,7 +267,7 @@ export function NutritionView() {
           kind={kind}
           message={me.error.message}
           onRetry={retry}
-          action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+          action={kind === "auth" ? <SignInButton /> : undefined}
         />
       </Card>
     );

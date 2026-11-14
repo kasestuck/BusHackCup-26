@@ -17,6 +17,7 @@ import { IconCalendar, IconClock, IconDumbbell, IconPlay, IconShield } from "@/c
 import { PlanCalendar } from "./plan-calendar";
 import { ExerciseCard } from "./exercise-card";
 import { PlanSkeleton } from "./plan-skeleton";
+import { SignInButton } from "@/components/auth/sign-in";
 
 const weekOf = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
@@ -179,7 +180,7 @@ export function PlanView() {
             kind={kind}
             message={planRes.error.message}
             onRetry={retryPlan}
-            action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+            action={kind === "auth" ? <SignInButton /> : undefined}
           />
         </Card>
       </Frame>

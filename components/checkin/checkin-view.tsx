@@ -16,7 +16,7 @@ import { formatNumber } from "@/lib/client/dashboard";
 import { normalizeCode, parseCheckinInput, streakLabel } from "@/lib/client/checkin";
 import { EARN_RULES } from "@/lib/client/economy";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, errorKindFromStatus } from "@/components/ui/state";
 import { IconAlert, IconCoin, IconFlame, IconMapPin } from "@/components/ui/icons";
 import { AlreadyCheckedIn, CheckinSuccess } from "./checkin-result";
+import { SignInButton, SignInLink } from "@/components/auth/sign-in";
 
 const CHECKIN_COINS = EARN_RULES.find((r) => r.key === "checkin")!.coins;
 
@@ -172,7 +173,7 @@ export function CheckinView() {
                     message={gyms.error.message}
                     onRetry={retryGyms}
                     action={
-                      gyms.error.status === 401 ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined
+                      gyms.error.status === 401 ? <SignInButton /> : undefined
                     }
                   />
                 </Card>
@@ -224,9 +225,7 @@ export function CheckinView() {
                   {error.status === 401 && (
                     <>
                       {" "}
-                      <a href="/login" className="font-medium underline">
-                        Sign in
-                      </a>
+                      <SignInLink className="font-medium underline" />
                     </>
                   )}
                 </span>

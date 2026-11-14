@@ -13,11 +13,12 @@ import {
   toOnboardingRequest,
   validateStep,
 } from "@/lib/client/onboarding";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { IconAlert, IconShield, IconSpark } from "@/components/ui/icons";
 import { FlowHeader } from "./flow-header";
 import { GenerationView } from "./generation-view";
 import { STEP_META, StepBody } from "./steps";
+import { SignInButton } from "@/components/auth/sign-in";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -157,9 +158,7 @@ export function OnboardingFlow() {
                 <div className="space-y-2">
                   <p>{submitError.message}</p>
                   {submitError.status === 401 && (
-                    <ButtonLink href="/login" variant="secondary" className="h-9 text-sm">
-                      Sign in
-                    </ButtonLink>
+                    <SignInButton variant="secondary" className="h-9 text-sm" />
                   )}
                 </div>
               </div>

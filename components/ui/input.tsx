@@ -10,6 +10,7 @@ export function Input({
   hint,
   error,
   suffix,
+  trailing,
   className,
   id,
   ...rest
@@ -18,6 +19,8 @@ export function Input({
   hint?: ReactNode;
   error?: string;
   suffix?: string;
+  /** Interactive element inside the field's right edge (e.g. show/hide password). */
+  trailing?: ReactNode;
 }) {
   const auto = useId();
   const inputId = id ?? auto;
@@ -42,6 +45,7 @@ export function Input({
           {...rest}
         />
         {suffix && <span className="pr-4 text-sm font-medium text-muted">{suffix}</span>}
+        {trailing && <span className="flex shrink-0 items-center pr-1.5">{trailing}</span>}
       </div>
       {hint && !error && (
         <p id={hintId} className="text-xs text-muted">

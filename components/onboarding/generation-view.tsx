@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/section-header";
 import { IconAlert, IconClock, IconDumbbell, IconLock, IconRefresh, IconShield, IconSpark, IconWifiOff } from "@/components/ui/icons";
 import { cx } from "@/components/ui/cx";
+import { SignInButton } from "@/components/auth/sign-in";
 
 /* ------------------------------- Running -------------------------------- */
 
@@ -101,9 +102,7 @@ function Failed({ status, message, onRetry }: { status: number; message: string;
       </div>
       <div className="flex flex-wrap gap-3">
         {auth ? (
-          <ButtonLink href="/login" size="lg" arrow>
-            Sign in
-          </ButtonLink>
+          <SignInButton size="lg" />
         ) : limited ? (
           <ButtonLink href="/pro" size="lg" arrow>
             See Pro

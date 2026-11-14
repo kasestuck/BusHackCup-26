@@ -29,7 +29,7 @@ export function Hero() {
             verified gym visit. Spend them on Pro or partner discounts.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <ButtonLink href="/onboarding" size="lg" arrow>
+            <ButtonLink href="/signup" size="lg" arrow>
               Get started
             </ButtonLink>
             <ButtonLink href="#how" variant="secondary" size="lg">
@@ -234,7 +234,7 @@ export function Pricing() {
           <p className="max-w-[40ch] text-muted">
             Or earn a month of Pro with the coins you collect by showing up.
           </p>
-          <ButtonLink href="/onboarding" size="lg" arrow>
+          <ButtonLink href="/signup" size="lg" arrow>
             Start free
           </ButtonLink>
           <p className="text-xs text-subtle">Payments are simulated in this demo; Pro features are real.</p>
@@ -261,7 +261,7 @@ export function FinalCta() {
           Two minutes of questions. A plan built for your week. Coins every time you show up.
         </p>
         <div className="relative mt-8 flex justify-center">
-          <ButtonLink href="/onboarding" size="lg" arrow>
+          <ButtonLink href="/signup" size="lg" arrow>
             Get started
           </ButtonLink>
         </div>

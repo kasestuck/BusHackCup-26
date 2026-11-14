@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, errorKindFromStatus } from "@/components/ui/state";
 import { IconCoin } from "@/components/ui/icons";
 import { PlanComparison } from "./plan-comparison";
+import { SignInButton } from "@/components/auth/sign-in";
 
 function Frame({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto max-w-[1240px] px-4 pt-8 sm:px-6 sm:pt-12 lg:px-8 lg:pt-16">{children}</div>;
@@ -80,7 +81,7 @@ export function PaywallView() {
             kind={kind}
             message={me.error.message}
             onRetry={retry}
-            action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+            action={kind === "auth" ? <SignInButton /> : undefined}
           />
         </Card>
       </Frame>

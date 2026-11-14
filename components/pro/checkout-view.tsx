@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { IconAlert, IconLock } from "@/components/ui/icons";
 import { FlowHeader } from "@/components/onboarding/flow-header";
 import { PRO_FEATURES } from "@/components/rewards/pro-features";
+import { SignInLink } from "@/components/auth/sign-in";
 
 const EMPTY: CardDraft = { name: "", number: "", expiry: "", cvc: "", zip: "" };
 
@@ -236,9 +237,7 @@ export function CheckoutView() {
                   {error.status === 401 && (
                     <>
                       {" "}
-                      <a href="/login" className="font-medium underline">
-                        Sign in
-                      </a>
+                      <SignInLink className="font-medium underline" />
                     </>
                   )}
                 </span>

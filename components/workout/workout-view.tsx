@@ -32,6 +32,7 @@ import { FlowHeader } from "@/components/onboarding/flow-header";
 import { ExerciseLogger } from "./exercise-logger";
 import { RestTimer } from "./rest-timer";
 import { SessionResult } from "./session-result";
+import { SignInButton, SignInLink } from "@/components/auth/sign-in";
 
 const LEAVE_MESSAGE = "Leave this workout? Your logged sets stay saved in this tab until you finish.";
 
@@ -197,9 +198,7 @@ function Session({ plan, dayIndex }: { plan: Plan; dayIndex: number }) {
                 {error.status === 401 && (
                   <>
                     {" "}
-                    <a href="/login" className="underline">
-                      Sign in
-                    </a>
+                    <SignInLink className="underline" />
                   </>
                 )}
               </span>
@@ -269,7 +268,7 @@ export function WorkoutView() {
               kind={kind}
               message={planRes.error.message}
               onRetry={retry}
-              action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+              action={kind === "auth" ? <SignInButton /> : undefined}
             />
           )}
         </Card>

@@ -9,7 +9,7 @@ import { affordability, sortRewards } from "@/lib/client/rewards";
 import { EARN_RULES, PRO_PRICE_USD } from "@/lib/client/economy";
 import { formatUsd } from "@/lib/client/checkout";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress";
 import { Eyebrow } from "@/components/ui/section-header";
@@ -19,6 +19,7 @@ import { IconCoin, IconGift, IconLock } from "@/components/ui/icons";
 import { cx } from "@/components/ui/cx";
 import { PRO_FEATURES } from "./pro-features";
 import { RedeemDialog } from "./redeem-dialog";
+import { SignInButton } from "@/components/auth/sign-in";
 
 function Frame({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto max-w-[1240px] px-4 pt-8 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">{children}</div>;
@@ -198,7 +199,7 @@ export function RewardsView() {
             kind={kind}
             message={failed.e.message}
             onRetry={failed.retry}
-            action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+            action={kind === "auth" ? <SignInButton /> : undefined}
           />
         </Card>
       </Frame>

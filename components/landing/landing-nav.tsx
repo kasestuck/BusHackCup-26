@@ -34,7 +34,7 @@ export function LandingNav() {
           >
             Log in
           </Link>
-          <ButtonLink href="/onboarding" className="h-10 px-4 text-sm">
+          <ButtonLink href="/signup" className="h-10 px-4 text-sm">
             Get started
           </ButtonLink>
         </div>

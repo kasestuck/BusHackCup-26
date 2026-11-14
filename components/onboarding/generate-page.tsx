@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, errorKindFromStatus } from "@/components/ui/state";
 import { FlowHeader } from "./flow-header";
 import { GenerationView } from "./generation-view";
+import { SignInButton } from "@/components/auth/sign-in";
 
 /** Standalone plan generation for users who already finished onboarding. */
 export function GeneratePage() {
@@ -30,7 +31,7 @@ export function GeneratePage() {
         kind={kind}
         message={me.error.message}
         onRetry={retryMe}
-        action={kind === "auth" ? <ButtonLink href="/login" arrow>Sign in</ButtonLink> : undefined}
+        action={kind === "auth" ? <SignInButton /> : undefined}
       />
     );
   } else if (!me.data.profile) {
