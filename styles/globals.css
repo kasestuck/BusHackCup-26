@@ -95,6 +95,8 @@
   --animate-shimmer: su-shimmer 1.6s linear infinite;
   --animate-pulse-dot: su-pulse 2.4s ease-in-out infinite;
   --animate-scan: su-scan 1.6s var(--su-ease-out) infinite;
+  /* In-place reveal for content inside bordered containers (no movement, nothing pokes out). */
+  --animate-fade: su-fade 320ms var(--su-ease-out) both;
 }
 
 /* Spacing uses Tailwind's 4px base scale (p-1 = 4px … p-16 = 64px).
@@ -123,6 +125,12 @@
   }
   to {
     background-position: -50% 0;
+  }
+}
+
+@keyframes su-fade {
+  from {
+    opacity: 0;
   }
 }
 
